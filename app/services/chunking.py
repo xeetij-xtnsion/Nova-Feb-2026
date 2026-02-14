@@ -6,6 +6,37 @@ import logging
 
 logger = logging.getLogger(__name__)
 
+# Heading patterns that indicate AI guidelines/instructions (not patient-facing content)
+_GUIDELINE_PATTERNS = [
+    r'\bai\s+rule\b',
+    r'\bai\s+action\b',
+    r'\bai\s+guidance\b',
+    r'\bai\s+safety\b',
+    r'\bai\s+clarification\b',
+    r'\bai\s+escalation\b',
+    r'\bimportant\s+ai\b',
+    r'\brequired\s+ai\b',
+    r'\bai\s+guardrail',
+    r'\bsafety\s*&\s*scope\s+boundaries\b',
+    r'\bescalation\s+trigger',
+    r'\bbooking\s+mistakes.*guardrail',
+    r'\bcommon\s+booking\s+mistakes\b',
+    r'\bhow\s+the\s+ai\b',
+    r'\binternal\s+safety\b',
+    r'\binternal\s+compliance\b',
+    r'\binternal\s+guidance\b',
+    r'\brequired.*response\s+pattern\b',
+    r'\bdo\s+not\s+expose\b',
+    r'\bbooking\s+rules?\b',
+    r'\bbooking\s+guidance\b',
+]
+
+
+def is_guideline_heading(heading: str) -> bool:
+    """Check if a section heading indicates AI guideline content."""
+    heading_lower = heading.lower()
+    return any(re.search(p, heading_lower) for p in _GUIDELINE_PATTERNS)
+
 
 def chunk_section(
     section_heading: str,
@@ -114,6 +145,7 @@ def create_chunks_from_sections(
             section['text']
         )
 
+        guideline = is_guideline_heading(section['heading'])
         for chunk in section_chunks:
             all_chunks.append({
                 'chunk_id': str(uuid.uuid4()),
@@ -122,8 +154,13 @@ def create_chunks_from_sections(
                 'chunk_index': chunk_index,
                 'content': chunk['content'],
                 'kb_version': kb_version,
+                'is_guideline': guideline,
             })
             chunk_index += 1
 
-    logger.info(f"Created {len(all_chunks)} chunks from {source_file}")
+    guideline_count = sum(1 for c in all_chunks if c['is_guideline'])
+    logger.info(
+        f"Created {len(all_chunks)} chunks from {source_file} "
+        f"({guideline_count} guideline chunks)"
+    )
     return all_chunks

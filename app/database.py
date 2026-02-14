@@ -33,12 +33,17 @@ async def init_db():
     """Initialize database tables and pgvector extension."""
     from sqlalchemy import text
     from app.models.database import KBChunk, Feedback  # Import to register models
+    from app.models.appointment import Appointment  # noqa: F401
 
     async with engine.begin() as conn:
         # Enable pgvector extension
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         # Create all tables
         await conn.run_sync(Base.metadata.create_all)
+        # Migrate: add practitioner column if missing
+        await conn.execute(text(
+            "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS practitioner VARCHAR(255)"
+        ))
 
 
 async def get_db() -> AsyncSession:
