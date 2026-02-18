@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     conversation_history_ttl: int = 3600  # 1 hour
     max_conversation_history: int = 10  # last N exchanges sent to Claude
 
+    # Dashboard
+    dashboard_password: str = "nova2026"
+
     # Booking
     booking_state_ttl: int = 1800  # 30 minutes
     clinic_services: list = [
@@ -105,3 +108,45 @@ def get_practitioners_for_service(service: str) -> list[dict]:
         if service in info["services"]:
             result.append({"name": name, "title": info["title"]})
     return result
+
+
+# ── Delivery mode configuration ───────────────────────────────────────
+
+# Keyed by service_display (consultation sub-option label) first, then
+# falls back to the base service name.
+SERVICE_DELIVERY_MODES: dict[str, list[str]] = {
+    # Consultation sub-options
+    "Initial Naturopathic Consultation": ["In-person"],
+    "Initial Injection/IV Consultation": ["In-person"],
+    "Meet & Greet": ["Phone"],
+    # Base services
+    "Naturopathic Medicine": ["In-person", "Phone", "Virtual"],
+    "Acupuncture": ["In-person"],
+    "Massage Therapy": ["In-person"],
+}
+
+VIRTUAL_PRACTITIONERS = {"Dr. Alexa Torontow", "Dr. Ali Nurani"}
+
+
+def get_delivery_modes(service_display: str | None, service: str) -> list[str]:
+    """Return available delivery modes for a service.
+
+    Checks the display name (e.g. "Initial Naturopathic Consultation") first,
+    then falls back to the base service (e.g. "Naturopathic Medicine").
+    Defaults to ["In-person"] if nothing matches.
+    """
+    if service_display and service_display in SERVICE_DELIVERY_MODES:
+        return SERVICE_DELIVERY_MODES[service_display]
+    return SERVICE_DELIVERY_MODES.get(service, ["In-person"])
+
+
+def filter_practitioners_by_delivery_mode(
+    practitioners: list[dict], delivery_mode: str
+) -> list[dict]:
+    """Filter practitioners for Virtual mode (only VIRTUAL_PRACTITIONERS).
+
+    For In-person and Phone, all practitioners are returned unchanged.
+    """
+    if delivery_mode == "Virtual":
+        return [p for p in practitioners if p["name"] in VIRTUAL_PRACTITIONERS]
+    return practitioners

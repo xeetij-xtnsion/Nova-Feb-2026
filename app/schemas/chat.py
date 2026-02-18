@@ -14,7 +14,7 @@ class Action(BaseModel):
     """Dynamic action button returned with chat responses."""
     label: str = Field(..., description="Button display text")
     value: str = Field(..., description="Value sent when button is clicked")
-    action_type: Literal["quick_reply", "booking", "back"] = Field(
+    action_type: Literal["quick_reply", "booking", "back", "patient_card"] = Field(
         "quick_reply", description="Button type for styling"
     )
 

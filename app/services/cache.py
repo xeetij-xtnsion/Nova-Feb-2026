@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from typing import Optional, List, Dict, Any
 import redis.asyncio as redis
 from app.config import settings
@@ -45,6 +46,19 @@ class CacheService:
         """
         data = text.encode('utf-8')
         return hashlib.sha256(data).hexdigest()[:16]  # Use first 16 chars
+
+    @staticmethod
+    def _normalize_question(text: str) -> str:
+        """Normalize question text for cache key consistency.
+
+        Lowercases, strips trailing punctuation, and collapses whitespace
+        so that 'What are your hours?' and 'what are your hours' hit the
+        same cache key.
+        """
+        text = text.lower().strip()
+        text = re.sub(r'[?!.,;:]+$', '', text)  # strip trailing punctuation
+        text = re.sub(r'\s+', ' ', text)          # collapse whitespace
+        return text
 
     async def get_retrieval(
         self,
@@ -134,7 +148,7 @@ class CacheService:
             return None
 
         try:
-            text_hash = self._text_hash(question)
+            text_hash = self._text_hash(self._normalize_question(question))
             key = f"response:v{kb_version}:h{text_hash}"
 
             cached = await self.redis_client.get(key)
@@ -167,7 +181,7 @@ class CacheService:
             return
 
         try:
-            text_hash = self._text_hash(question)
+            text_hash = self._text_hash(self._normalize_question(question))
             key = f"response:v{kb_version}:h{text_hash}"
 
             await self.redis_client.setex(

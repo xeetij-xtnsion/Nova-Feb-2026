@@ -9,7 +9,7 @@ import logging
 from app.database import init_db
 from app.redis_client import RedisClient
 from app.services.guidelines import load_guidelines
-from app.routers import health, chat, ingest, feedback, demo, appointments
+from app.routers import health, chat, ingest, feedback, demo, appointments, dashboard
 from openai import OpenAIError
 from anthropic import AnthropicError
 
@@ -135,6 +135,7 @@ app.include_router(ingest.router, tags=["Ingestion"])
 app.include_router(feedback.router, tags=["Feedback"])
 app.include_router(demo.router, tags=["Demo"])
 app.include_router(appointments.router, tags=["Appointments"])
+app.include_router(dashboard.router, tags=["Dashboard"])
 
 
 # Root endpoint
@@ -151,6 +152,7 @@ async def root():
             "ingest": "/ingest",
             "feedback": "/feedback",
             "demo": "/demo",
-            "appointments": "/appointments"
+            "appointments": "/appointments",
+            "dashboard": "/dashboard"
         }
     }

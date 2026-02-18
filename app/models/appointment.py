@@ -22,6 +22,7 @@ class Appointment(Base):
     email = Column(String(255), nullable=True)
     service = Column(String(255), nullable=False)
     practitioner = Column(String(255), nullable=True)
+    delivery_mode = Column(String(50), nullable=True)
     appointment_date = Column(Date, nullable=False)
     appointment_time = Column(Time, nullable=False)
     status = Column(

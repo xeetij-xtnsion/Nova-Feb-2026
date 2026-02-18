@@ -34,6 +34,7 @@ async def init_db():
     from sqlalchemy import text
     from app.models.database import KBChunk, Feedback  # Import to register models
     from app.models.appointment import Appointment  # noqa: F401
+    from app.models.analytics import ChatAnalytics  # noqa: F401
 
     async with engine.begin() as conn:
         # Enable pgvector extension
@@ -43,6 +44,14 @@ async def init_db():
         # Migrate: add practitioner column if missing
         await conn.execute(text(
             "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS practitioner VARCHAR(255)"
+        ))
+        # Migrate: add delivery_mode column if missing
+        await conn.execute(text(
+            "ALTER TABLE appointments ADD COLUMN IF NOT EXISTS delivery_mode VARCHAR(50)"
+        ))
+        # Migrate: add sentiment column if missing
+        await conn.execute(text(
+            "ALTER TABLE chat_analytics ADD COLUMN IF NOT EXISTS sentiment VARCHAR(16)"
         ))
 
 
