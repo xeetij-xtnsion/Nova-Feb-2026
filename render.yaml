@@ -1,20 +1,20 @@
 databases:
   - name: nova-db
-    plan: starter
+    plan: free
     databaseName: nova_agent
     postgresMajorVersion: "16"
-    ipAllowList: []  # Allow only internal connections
+    ipAllowList: []
 
 services:
   - type: redis
     name: nova-redis
-    plan: starter
+    plan: free
     ipAllowList: []
 
   - type: web
     name: nova-agent
     runtime: docker
-    plan: starter
+    plan: free
     healthCheckPath: /health
     envVars:
       - key: DATABASE_URL
