@@ -18,8 +18,10 @@ TOPICS: list[dict] = [
     {
         "name": "consultations",
         "phrases": ["meet and greet", "meet & greet", "initial consultation",
-                     "initial visit", "first visit", "free consultation",
-                     "free meet", "consultation option", "consultation type"],
+                     "initial visit", "first visit", "first time",
+                     "first appointment", "new patient visit", "never been",
+                     "free consultation", "free meet",
+                     "consultation option", "consultation type"],
     },
     {
         "name": "services",
@@ -35,6 +37,16 @@ TOPICS: list[dict] = [
         "words": ["hours"],
     },
     {
+        "name": "rescheduling",
+        "phrases": ["resched", "cancel my", "change my appointment",
+                     "move my appointment", "rescheduling policy",
+                     "cancellation policy", "cancel an appointment",
+                     "can i cancel", "how to cancel",
+                     "till when can i", "how late can i cancel",
+                     "no show", "no-show", "late cancellation"],
+        "words": ["reschedule", "rescheduling", "policy"],
+    },
+    {
         "name": "booking",
         "phrases": ["make an appointment"],
         "words": ["book", "booking", "appointment"],
@@ -44,8 +56,9 @@ TOPICS: list[dict] = [
         "phrases": ["where are you", "where is the clinic", "where is it located",
                      "how to get there", "how do i get to", "contact info",
                      "contact number", "phone number", "call you",
-                     "your address", "clinic address", "get directions"],
-        "words": ["location", "address", "parking", "directions"],
+                     "your address", "clinic address", "get directions",
+                     "which floor", "what floor"],
+        "words": ["location", "address", "parking", "directions", "floor"],
     },
     {
         "name": "practitioners",
@@ -86,7 +99,7 @@ def _build_topic_data(topic_name: str) -> Dict:
         return {
             "detail": (
                 "Nova Naturopathic Integrative Clinic is located at "
-                "208-6707 Elbow Dr SW, Calgary, AB T2V 0E4. "
+                "208-6707 Elbow Dr SW, Calgary, AB T2V 0E4 (Floor 1). "
                 "You can reach us at (587) 391-5753 or email admin@novaclinic.ca. "
                 "Free parking is available for up to 2 hours in unreserved yellow stalls "
                 "(basement or surface) — just register your license plate."
@@ -97,7 +110,11 @@ def _build_topic_data(topic_name: str) -> Dict:
         lines = []
         for name, info in practitioner_services.items():
             services = ", ".join(info["services"])
-            lines.append(f"- {name} ({info['title']}): {services}")
+            focus = info.get("areas_of_focus", "")
+            line = f"- {name} ({info['title']}): {services}"
+            if focus:
+                line += f". Focus areas: {focus}"
+            lines.append(line)
         return {
             "detail": "Our practitioners:\n" + "\n".join(lines),
         }
@@ -128,6 +145,20 @@ def _build_topic_data(topic_name: str) -> Dict:
                 "- Comfortable clothing (especially for massage, acupuncture, or osteopathic treatments)\n"
                 "- For new patients: please arrive 10-15 minutes early to complete intake forms\n\n"
                 "We'll take care of everything else at the clinic!"
+            ),
+        }
+
+    if topic_name == "rescheduling":
+        return {
+            "detail": (
+                "Nova Clinic has a 24-hour cancellation/rescheduling policy. "
+                "Please inform the clinic at least 24 hours before your scheduled appointment "
+                "if you need to cancel or reschedule. Failure to do so may result in a fee "
+                "being added to your account.\n\n"
+                "To reschedule or cancel, you can:\n"
+                "- Call us at (587) 391-5753\n"
+                "- Email admin@novaclinic.ca\n"
+                "- Or manage your appointment through our online booking portal"
             ),
         }
 

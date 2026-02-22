@@ -24,17 +24,31 @@ RESPONSE GUIDELINES:
 - End with a natural follow-up question or offer, not a generic one
 - If conversation history is provided, DO NOT repeat information you've already shared
 
+HANDLING PERSONAL, ACCESSIBILITY, OR SENSITIVE QUESTIONS:
+- When patients share personal details about themselves (body type, disability, mobility, age, pregnancy, etc.) and ask if the clinic can help — be WARM, REASSURING, and DIRECT
+- NEVER deflect with "contact the clinic to discuss" — that feels cold and evasive
+- Default to inclusivity: "Everyone is welcome here!" / "Our practitioners work with patients of all backgrounds and needs"
+- If we offer relevant services, mention them (e.g. prenatal massage, pediatric care, accessible location on Floor 1)
+- Only suggest calling ahead if there's a genuinely specific accommodation to arrange, and frame it positively: "You're absolutely welcome! If you'd like, you can let us know ahead of your visit so we can make sure everything is set up just right for you"
+
 HANDLING SHORT OR AMBIGUOUS MESSAGES:
 - If the patient sends a very short or vague message like "no", "ok", "sure", "thanks", "hmm", or similar that does NOT contain a clear question or request, do NOT assume they want information or pretend to know their intent
 - Instead, respond naturally and briefly. For example: "No worries! What can I help you with?" or "Of course! Is there anything else you'd like to know?"
 - Match the tone of their message — a "no" should get a brief, respectful acknowledgment, not an enthusiastic information dump
 - NEVER say things like "I'm glad you're looking for more information" unless they actually asked for information
 
+TONE FOR BOOKING & CONSULTATIONS:
+- When mentioning initial consultations for new patients, say they are "recommended" — never say "required", "must", or "should"
+- Frame it as a benefit: "We recommend an initial consultation so we can understand your needs and create a personalized plan"
+- Never make the patient feel like they HAVE to do something before getting care
+
 RULES:
-- Answer using ONLY the provided knowledge base context
+- Answer using the provided knowledge base context AND the conversation history
+- When the patient refers to "these options", "the difference", etc., check the conversation history for what was just discussed (including any [Options shown: ...] notes) and answer about THOSE specific options
 - If context is insufficient AND the patient's message is a clear question, respond: "KB_INSUFFICIENT_INFO"
 - If the patient's message is not a clear question (e.g. "no", "ok", "yeah"), respond conversationally without using KB_INSUFFICIENT_INFO
 - Never fabricate information
+- IMPORTANT: If the patient asks about a specific person (by name or pronoun like "he/she") who is NOT mentioned in the provided context chunks, respond with KB_INSUFFICIENT_INFO. Do NOT guess or assume someone works at the clinic — only confirm practitioners who appear in the context.
 """
 
 BOOKING_SYSTEM_PROMPT = """You are Nova, a warm and friendly assistant helping a patient book an appointment at Nova Clinic. Generate ONLY the conversational text for the current booking step. Be brief and encouraging.
@@ -234,7 +248,7 @@ Please answer the question based on the context above."""
             "invalid_name": "The name was too short. Ask the patient to enter their full name.",
             "invalid_phone": "The phone number doesn't look right. Ask them to re-enter a valid phone number.",
             "booking_error": "Something went wrong saving the appointment. Apologize and ask them to try again.",
-            "select_practitioner_with_preferred": f"The patient chose '{data.get('service', '')}'{mode_note}.{mode_mention} They usually see {data.get('preferred_practitioner', 'their preferred practitioner')} — mention that they're listed first. Ask if they'd like to continue with them or choose someone else. Practitioner buttons will appear automatically.",
+            "select_practitioner_with_preferred": f"The patient chose '{data.get('service', '')}'{mode_note}.{mode_mention} They mentioned they'd like to see {data.get('preferred_practitioner', 'a specific practitioner')} — they're listed first. Ask if they'd like to go ahead with them or choose someone else. Practitioner buttons will appear automatically.",
             "confirm_prefilled": f"Summarize the booking and ask the patient to confirm: {data.get('service', '')}{mode_note}{pract_note} on {fdate} at {data.get('time', '')} for {data.get('name', '')}. Their name and phone are already on file so you don't need to re-confirm those details.",
             "booking_confused": "The patient seems unsure or is reconsidering during the booking. Warmly acknowledge that it's totally okay to take a step back. Let them know they can continue where they left off, explore our services, or cancel — no pressure at all.",
             "practitioner_confused": f"The patient isn't sure which practitioner to choose for {data.get('service', '')}. Briefly reassure them — they can pick 'No preference' and we'll match them with someone great, or they can choose from the list. Keep it warm and low-pressure.",
@@ -284,7 +298,7 @@ Please answer the question based on the context above."""
             "invalid_name": "Could you enter your full name? It should be at least 2 characters.",
             "invalid_phone": "That phone number doesn't look quite right. Please enter a valid number with at least 7 digits.",
             "booking_error": "I'm sorry, something went wrong saving your appointment. Please try again!",
-            "select_practitioner_with_preferred": f"Great choice — {data.get('service', '')}! This will be a {mode} appointment. I see you usually see {data.get('preferred_practitioner', 'your preferred practitioner')} — they're listed first below. Would you like to continue with them, or choose someone else?" if mode else f"Great choice — {data.get('service', '')}! I see you usually see {data.get('preferred_practitioner', 'your preferred practitioner')} — they're listed first below. Would you like to continue with them, or choose someone else?",
+            "select_practitioner_with_preferred": f"Great choice — {data.get('service', '')}! This will be a {mode} appointment. I see you'd like to see {data.get('preferred_practitioner', 'a specific practitioner')} — they're listed first below. Would you like to go ahead with them, or choose someone else?" if mode else f"Great choice — {data.get('service', '')}! I see you'd like to see {data.get('preferred_practitioner', 'a specific practitioner')} — they're listed first below. Would you like to go ahead with them, or choose someone else?",
             "confirm_prefilled": (
                 f"Here's your booking summary:\n"
                 f"  Service: {data.get('service', '')}\n"
@@ -436,9 +450,11 @@ Please answer the question based on the context above."""
 
     @staticmethod
     def strip_citations(answer: str) -> str:
-        """Remove [chunk_id] UUID references from the answer text."""
+        """Remove [chunk_id] UUID references and internal metadata from the answer text."""
         # Remove UUIDs and any trailing comma/space combos left behind
         cleaned = re.sub(r'\s*\[([a-f0-9\-]{36})\]\s*,?\s*', ' ', answer)
+        # Remove internal [Options shown: ...] metadata that should not be user-facing
+        cleaned = re.sub(r'\s*\[Options shown:[^\]]*\]', '', cleaned)
         # Clean up double spaces and trailing whitespace
         cleaned = re.sub(r'  +', ' ', cleaned).strip()
         return cleaned

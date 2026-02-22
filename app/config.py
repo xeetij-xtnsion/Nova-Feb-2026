@@ -23,7 +23,7 @@ class Settings(BaseSettings):
     chunk_size: int = 700
     chunk_overlap: int = 120
     top_k: int = 8
-    kb_version: int = 1
+    kb_version: int = 2
 
     # Confidence Thresholds
     similarity_threshold: float = 0.45
@@ -68,7 +68,9 @@ settings = Settings()
 # Practitioner ↔ service mapping
 practitioner_services = {
     "Dr. Ali Nurani": {
-        "title": "Naturopathic Doctor",
+        "title": "Naturopathic Doctor (ND)",
+        "credentials": "BSc (University of Calgary), ND (Canadian College of Naturopathic Medicine)",
+        "registrations": "CNDA, CAND, AAND",
         "services": [
             "Naturopathic Medicine",
             "IV Therapy",
@@ -76,27 +78,64 @@ practitioner_services = {
             "Prolotherapy",
             "Functional Testing",
         ],
+        "areas_of_focus": "Digestive health, weight management, endocrine, immune support, pain management, nervous system concerns",
+        "certifications": "IV nutrient therapy, injection therapies, ozone therapy, regenerative injection therapy",
     },
     "Dr. Marisa Hucal": {
-        "title": "Naturopathic Doctor",
-        "services": ["Naturopathic Medicine"],
-    },
-    "Dr. Chad Patterson": {
-        "title": "Naturopathic Doctor",
-        "services": ["Naturopathic Medicine", "Pediatric Naturopathic"],
+        "title": "Naturopathic Doctor (ND)",
+        "credentials": "BSc Honours (University of Calgary), ND (Boucher Institute of Naturopathic Medicine)",
+        "registrations": "CNDA, CAND",
+        "services": [
+            "Naturopathic Medicine",
+            "IV Therapy",
+            "Injections",
+        ],
+        "areas_of_focus": "Weight management, digestive health, hormonal health (men and women), stress and mental health",
+        "certifications": "Acupuncture, IV therapy, chelation and advanced IV therapies, prescribing upgrade, Metabolic Balance Certified Coach",
     },
     "Dr. Alexa Torontow": {
-        "title": "Naturopathic Doctor",
+        "title": "Naturopathic Doctor (ND)",
+        "credentials": "BHK (University of British Columbia), ND (Canadian College of Naturopathic Medicine)",
+        "registrations": "CNDA, AAND",
         "services": ["Naturopathic Medicine"],
+        "areas_of_focus": "Women's hormonal health, fertility, pregnancy, postpartum care, perinatal support",
+        "certifications": "Trained Birth Doula",
+    },
+    "Dr. Madison Thorne": {
+        "title": "Naturopathic Doctor (ND)",
+        "credentials": "Kinesiology degree, ND (Canadian College of Naturopathic Medicine)",
+        "registrations": "CNDA, AAND, CAND, Oncology Association of Naturopathic Doctors",
+        "services": [
+            "Naturopathic Medicine",
+            "IV Therapy",
+            "Injections",
+        ],
+        "areas_of_focus": "Women's hormonal health, general naturopathic medicine",
+        "certifications": "Acupuncture, IV therapy, intramuscular injection therapy",
     },
     "Lorena Bulcao": {
-        "title": "Acupuncturist, TCM Doctor, RMT",
+        "title": "Dr. Ac, TCMD, RMT",
+        "credentials": "Massage Therapy (Mount Royal College), TCMD (Calgary College of Chinese Medicine and Acupuncture)",
         "services": [
             "Acupuncture",
             "Cupping",
             "Facial Rejuvenation",
             "Massage Therapy",
         ],
+        "areas_of_focus": "Pain management, musculoskeletal issues, stress management, women's health, facial acupuncture",
+        "certifications": "Reiki, reflexology, Thai massage, yoga instruction, Ayurvedic medicine training (India)",
+    },
+    "Emily Wilton": {
+        "title": "Dr. Acu, TCMD, RMT",
+        "credentials": "RMT, TCMD, Dr. Acu — 8+ years clinical experience",
+        "services": [
+            "Acupuncture",
+            "Cupping",
+            "Facial Rejuvenation",
+            "Massage Therapy",
+        ],
+        "areas_of_focus": "Chronic pain and tension, chronic illness, nervous system regulation, mobility, post-surgical rehab, scar tissue care",
+        "certifications": "IASTM (Instrument-Assisted Soft Tissue Mobilization), herbal medicine, cupping therapy",
     },
 }
 

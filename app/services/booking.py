@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import (
     settings,
+    practitioner_services,
     get_practitioners_for_service,
     get_delivery_modes,
     filter_practitioners_by_delivery_mode,
@@ -39,7 +40,9 @@ BOOKING_TRIGGERS = [
 BOOKING_EXCLUDE_PHRASES = [
     # Info requests
     "upcoming", "my visit", "my upcoming", "details of", "tell me about",
-    "what about", "when is", "what are the details", "reschedule", "cancel",
+    "what about", "when is", "what are the details",
+    "reschedule", "rescheduling", "resched", "cancel my", "cancellation",
+    "change my appointment", "move my appointment",
     "existing", "current", "status",
     # Uncertainty
     "not sure", "don't know", "dont know", "unsure", "no idea",
@@ -252,15 +255,98 @@ class BookingService:
         return f"{BookingService._ordinal(d.day)} {d.strftime('%b')}, {d.year}"
 
     @staticmethod
-    def _available_dates() -> List[str]:
-        """Return next 5 weekdays starting from tomorrow."""
+    def _available_dates(offset: int = 0) -> List[str]:
+        """Return 5 weekdays starting from tomorrow, skipping *offset* weekdays."""
         dates = []
         d = date.today() + timedelta(days=1)
+        skipped = 0
         while len(dates) < 5:
             if d.weekday() < 5:  # Mon-Fri
-                dates.append(d.strftime("%Y-%m-%d"))
+                if skipped < offset:
+                    skipped += 1
+                else:
+                    dates.append(d.strftime("%Y-%m-%d"))
             d += timedelta(days=1)
         return dates
+
+    @staticmethod
+    def _match_natural_date(msg: str, available_dates: List[str]) -> Optional[str]:
+        """Match natural language date input against available ISO dates.
+
+        Handles: "2nd March is fine", "march 2", "the 2nd", "monday", "tuesday", etc.
+        Returns the matching ISO date string, or None.
+        """
+        import re as _re
+
+        _MONTHS = {
+            "jan": 1, "january": 1, "feb": 2, "february": 2,
+            "mar": 3, "march": 3, "apr": 4, "april": 4,
+            "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+            "aug": 8, "august": 8, "sep": 9, "september": 9,
+            "oct": 10, "october": 10, "nov": 11, "november": 11,
+            "dec": 12, "december": 12,
+        }
+        _WEEKDAYS = {
+            "monday": 0, "mon": 0, "tuesday": 1, "tue": 1, "tues": 1,
+            "wednesday": 2, "wed": 2, "thursday": 3, "thu": 3, "thurs": 3,
+            "friday": 4, "fri": 4, "saturday": 5, "sat": 5,
+            "sunday": 6, "sun": 6,
+        }
+
+        # Parse available dates into date objects
+        parsed = []
+        for iso in available_dates:
+            try:
+                parsed.append((iso, datetime.strptime(iso, "%Y-%m-%d").date()))
+            except ValueError:
+                continue
+
+        if not parsed:
+            return None
+
+        # Extract day number from ordinals like "2nd", "3rd", "15th" or plain "2", "15"
+        day_match = _re.search(r'\b(\d{1,2})(?:st|nd|rd|th)?\b', msg)
+        day_num = int(day_match.group(1)) if day_match else None
+
+        # Extract month
+        month_num = None
+        for name, num in _MONTHS.items():
+            if name in msg:
+                month_num = num
+                break
+
+        # Extract weekday
+        weekday_num = None
+        for name, num in _WEEKDAYS.items():
+            if name in msg:
+                weekday_num = num
+                break
+
+        # Match by day + month (most specific)
+        if day_num and month_num:
+            for iso, d in parsed:
+                if d.day == day_num and d.month == month_num:
+                    return iso
+
+        # Match by day number only (within available dates)
+        if day_num:
+            matches = [(iso, d) for iso, d in parsed if d.day == day_num]
+            if len(matches) == 1:
+                return matches[0][0]
+
+        # Match by weekday name
+        if weekday_num is not None:
+            matches = [(iso, d) for iso, d in parsed if d.weekday() == weekday_num]
+            if len(matches) == 1:
+                return matches[0][0]
+
+        # Match by label format (e.g. "2nd Mar, 2026" typed directly)
+        for iso, d in parsed:
+            label = BookingService._format_date(iso).lower()
+            if label in msg:
+                return iso
+
+        return None
 
     @staticmethod
     def _available_times() -> List[str]:
@@ -269,6 +355,64 @@ class BookingService:
         for h in range(settings.booking_hours_start, settings.booking_hours_end):
             slots.append(f"{h:02d}:00")
         return slots
+
+    @staticmethod
+    def _match_natural_time(msg: str, valid_times: List[str]) -> Optional[str]:
+        """Match natural language time input against available time slots.
+
+        Handles: "16", "4 pm", "4pm", "4:00 pm", "4:00", "four", "at 2", etc.
+        Returns the matching HH:00 string, or None.
+        """
+        import re as _re
+
+        _WORD_NUMS = {
+            "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
+            "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
+            "eleven": 11, "twelve": 12, "noon": 12,
+        }
+
+        hour = None
+
+        # Try "4:00 pm", "4:30pm", "16:00" etc.
+        m = _re.search(r'(\d{1,2})\s*:\s*\d{2}\s*(am|pm|a\.m|p\.m)?', msg)
+        if m:
+            hour = int(m.group(1))
+            if m.group(2) and m.group(2).startswith('p') and hour < 12:
+                hour += 12
+            elif m.group(2) and m.group(2).startswith('a') and hour == 12:
+                hour = 0
+
+        # Try "4 pm", "4pm", "16"
+        if hour is None:
+            m = _re.search(r'\b(\d{1,2})\s*(am|pm|a\.m|p\.m)?\b', msg)
+            if m:
+                hour = int(m.group(1))
+                if m.group(2) and m.group(2).startswith('p') and hour < 12:
+                    hour += 12
+                elif m.group(2) and m.group(2).startswith('a') and hour == 12:
+                    hour = 0
+                elif not m.group(2) and hour < 8:
+                    # Bare number < 8 likely means PM (no one books at 1am)
+                    hour += 12
+
+        # Try word numbers: "four", "noon", etc.
+        if hour is None:
+            for word, num in _WORD_NUMS.items():
+                if word in msg:
+                    hour = num
+                    if "pm" in msg or "p.m" in msg:
+                        if hour < 12:
+                            hour += 12
+                    elif hour < 8:
+                        hour += 12
+                    break
+
+        if hour is not None:
+            slot = f"{hour:02d}:00"
+            if slot in valid_times:
+                return slot
+
+        return None
 
     @staticmethod
     def _parse_time_preference(message: str, valid_times: List[str]) -> List[str]:
@@ -281,9 +425,10 @@ class BookingService:
         # Map phrases to hour ranges (inclusive start, exclusive end)
         # "phrases" = multi-word, safe for substring; "words" = need word-boundary
         _TIME_PHRASES = [
-            # After work / evening
+            # After work / evening / later
             (["after work", "after 5", "after five", "evening", "late afternoon",
-              "later in the day", "end of day", "last slot"], [], 15, 24),
+              "later in the day", "end of day", "last slot",
+              "anything later", "something later", "any later"], ["later"], 15, 24),
             # Afternoon
             (["afternoon", "after lunch", "after noon", "midday"], ["pm"], 12, 24),
             # Morning / early
@@ -328,6 +473,69 @@ class BookingService:
 
         msg = message.lower()
 
+        # Detect practitioner name from message (e.g. "book with Dr. Ali Nurani")
+        detected_prac = None
+        for prac_name in practitioner_services:
+            if prac_name.lower() in msg:
+                detected_prac = prac_name
+                break
+        if not detected_prac:
+            for prac_name in practitioner_services:
+                last_name = prac_name.split()[-1]
+                if word_match(last_name, msg):
+                    detected_prac = prac_name
+                    break
+        if detected_prac:
+            initial["preferred_practitioner"] = detected_prac
+            initial["practitioner"] = detected_prac
+
+        # Helper: auto-select a specific consultation option and advance
+        async def _select_consultation(opt):
+            initial["service"] = opt["maps_to_service"]
+            initial["service_display"] = opt["label"]
+            modes = get_delivery_modes(opt["label"], opt["maps_to_service"])
+            if len(modes) == 1:
+                initial["delivery_mode"] = modes[0]
+            else:
+                initial["state"] = "select_delivery_mode"
+                await self._set_state(session_id, initial)
+                actions = [{"label": m, "value": m, "action_type": "booking"} for m in modes]
+                actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                return "select_delivery_mode", actions
+
+            practitioners = get_practitioners_for_service(opt["maps_to_service"])
+            practitioners = filter_practitioners_by_delivery_mode(practitioners, initial["delivery_mode"])
+
+            if not practitioners or initial.get("practitioner"):
+                if not practitioners and not initial.get("practitioner"):
+                    initial["practitioner"] = None
+                initial["state"] = "select_date"
+                await self._set_state(session_id, initial)
+                dates = self._available_dates()
+                actions = [
+                    {"label": self._format_date(d), "value": d, "action_type": "booking"} for d in dates
+                ]
+                actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                return "select_date", actions
+
+            initial["state"] = "select_practitioner"
+            await self._set_state(session_id, initial)
+            preferred = initial.get("preferred_practitioner", "")
+            step_hint = "select_practitioner"
+            if preferred:
+                pref_list = [p for p in practitioners if p["name"] == preferred]
+                rest_list = [p for p in practitioners if p["name"] != preferred]
+                if pref_list:
+                    practitioners = pref_list + rest_list
+                    step_hint = "select_practitioner_with_preferred"
+            actions = [
+                {"label": f"{p['name']} ({p['title']})", "value": p["name"], "action_type": "booking"}
+                for p in practitioners
+            ]
+            actions.append({"label": "No preference", "value": "No preference", "action_type": "booking"})
+            actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+            return step_hint, actions
+
         # Helper: show consultation sub-options
         async def _show_consultation():
             initial["show_consultation"] = True
@@ -360,6 +568,18 @@ class BookingService:
                 actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
                 return "select_date", actions
 
+            # Skip practitioner step if already selected (e.g. "book with Dr. X")
+            if initial.get("practitioner"):
+                initial["state"] = "select_date"
+                await self._set_state(session_id, initial)
+                dates = self._available_dates()
+                actions = [
+                    {"label": self._format_date(d), "value": d, "action_type": "booking"}
+                    for d in dates
+                ]
+                actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                return "select_date", actions
+
             initial["state"] = "select_practitioner"
             await self._set_state(session_id, initial)
 
@@ -382,23 +602,67 @@ class BookingService:
 
         # ── Priority 1: Explicit keywords in the user's message ──
 
-        # 1a. Consultation keywords in message
+        # 1a. Specific consultation type → auto-select and advance
+        _SPECIFIC_CONSULT = [
+            (["meet and greet", "meet & greet", "meet&greet"], "Meet & Greet"),
+            (["initial naturopathic"], "Initial Naturopathic Consultation"),
+            (["initial injection", "initial iv", "iv consultation"], "Initial Injection/IV Consultation"),
+        ]
+        for phrases, label in _SPECIFIC_CONSULT:
+            if any(p in msg for p in phrases):
+                opt = next(o for o in CONSULTATION_OPTIONS if o["label"] == label)
+                return await _select_consultation(opt)
+
+        # 1b. Generic consultation keywords → show sub-options
         if any(kw in msg for kw in CONSULT_KEYWORDS):
             return await _show_consultation()
 
-        # 1b. Service keywords in message
+        # 1c. Service keywords in message
         for keyword, service in SERVICE_KEYWORDS.items():
             if word_match(keyword, msg):
                 return await _select_service(service)
 
-        # ── Priority 2: Inferred from conversation context ──
+        # ── Priority 2: Preferred practitioner → filter to their services ──
+        if detected_prac and detected_prac in practitioner_services:
+            prac_info = practitioner_services[detected_prac]
+            prac_svc = [s for s in self.services if s in prac_info["services"]]
+            if len(prac_svc) == 1:
+                # Only one bookable service → auto-select, skip practitioner step
+                svc = prac_svc[0]
+                initial["service"] = svc
+                modes = get_delivery_modes(None, svc)
+                if len(modes) == 1:
+                    initial["delivery_mode"] = modes[0]
+                    initial["state"] = "select_date"
+                    await self._set_state(session_id, initial)
+                    dates = self._available_dates()
+                    actions = [
+                        {"label": self._format_date(d), "value": d, "action_type": "booking"}
+                        for d in dates
+                    ]
+                    actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                    return "select_date", actions
+                else:
+                    initial["state"] = "select_delivery_mode"
+                    await self._set_state(session_id, initial)
+                    actions = [{"label": m, "value": m, "action_type": "booking"} for m in modes]
+                    actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                    return "select_delivery_mode", actions
+            elif prac_svc:
+                # Multiple services → show filtered list
+                await self._set_state(session_id, initial)
+                actions = [{"label": s, "value": s, "action_type": "booking"} for s in prac_svc]
+                actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                return "select_service", actions
+
+        # ── Priority 3: Inferred from conversation context ──
         # (only when the message itself doesn't specify)
 
-        # 2a. Inferred consultation from history
+        # 3a. Inferred consultation from history
         if inferred_consultation:
             return await _show_consultation()
 
-        # 2b. Inferred service from history
+        # 3b. Inferred service from history
         if inferred_service and inferred_service in self.services:
             return await _select_service(inferred_service)
 
@@ -440,6 +704,60 @@ class BookingService:
         exact_buttons.update({"not sure", "no preference"})
 
         if msg_lower not in exact_buttons and state not in ("idle", "booked"):
+            # ── Rescheduling / cancellation question (break out of booking) ──
+            _RESCHED_PHRASES = (
+                "reschedule", "rescheduling", "reschedul",
+                "cancel my", "cancellation policy", "cancel an appointment",
+                "change my appointment", "move my appointment",
+                "how late can i cancel", "no show", "no-show",
+                "policy",
+            )
+            if any(p in msg_lower for p in _RESCHED_PHRASES):
+                return "rescheduling_policy", []
+
+            # ── Practitioner change (rewind, not restart) ──
+            # Detect at steps after practitioner selection (date, time, etc.)
+            if state in ("select_date", "select_time", "collect_name", "collect_phone", "confirm"):
+                _PRAC_CHANGE_PHRASES = (
+                    "other doctor", "another doctor", "different doctor",
+                    "other practitioner", "another practitioner", "different practitioner",
+                    "someone else", "somebody else", "change the doctor",
+                    "change the practitioner", "change practitioner", "change doctor",
+                    "switch doctor", "switch practitioner", "not with",
+                    "other therapist", "different therapist", "another therapist",
+                )
+                wants_prac_change = any(p in msg_lower for p in _PRAC_CHANGE_PHRASES)
+
+                # Also detect a specific practitioner name that differs from current
+                if not wants_prac_change:
+                    current_prac = (data.get("practitioner") or "").lower()
+                    for prac_name in practitioner_services:
+                        if prac_name.lower() in msg_lower and prac_name.lower() != current_prac:
+                            wants_prac_change = True
+                            data["preferred_practitioner"] = prac_name
+                            break
+                        parts = prac_name.split()
+                        first_name = parts[0].lower()
+                        last_name = parts[-1].lower()
+                        if word_match(first_name, msg_lower) and prac_name.lower() != current_prac:
+                            wants_prac_change = True
+                            data["preferred_practitioner"] = prac_name
+                            break
+                        if word_match(last_name, msg_lower) and prac_name.lower() != current_prac:
+                            wants_prac_change = True
+                            data["preferred_practitioner"] = prac_name
+                            break
+
+                if wants_prac_change:
+                    # Rewind to practitioner step (keep service, delivery mode)
+                    data["state"] = "select_practitioner"
+                    data.pop("practitioner", None)
+                    data.pop("date", None)
+                    data.pop("date_offset", None)
+                    data.pop("time", None)
+                    await self._set_state(session_id, data)
+                    return await self._replay_step(session_id, data)
+
             restart = False
             # Consultation intent
             if any(kw in msg_lower for kw in CONSULT_KEYWORDS):
@@ -535,7 +853,19 @@ class BookingService:
                 practitioners = filter_practitioners_by_delivery_mode(practitioners, data["delivery_mode"])
 
                 if not practitioners:
-                    data["practitioner"] = None
+                    if not data.get("practitioner"):
+                        data["practitioner"] = None
+                    data["state"] = "select_date"
+                    await self._set_state(session_id, data)
+                    dates = self._available_dates()
+                    actions = [
+                        {"label": self._format_date(d), "value": d, "action_type": "booking"} for d in dates
+                    ]
+                    actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                    return "select_date", actions
+
+                # Skip practitioner step if already selected
+                if data.get("practitioner"):
                     data["state"] = "select_date"
                     await self._set_state(session_id, data)
                     dates = self._available_dates()
@@ -612,10 +942,22 @@ class BookingService:
 
             # Skip practitioner step if no practitioners offer this service
             if not practitioners:
-                data["practitioner"] = None
+                if not data.get("practitioner"):
+                    data["practitioner"] = None
                 data["state"] = "select_date"
                 await self._set_state(session_id, data)
 
+                dates = self._available_dates()
+                actions = [
+                    {"label": self._format_date(d), "value": d, "action_type": "booking"} for d in dates
+                ]
+                actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                return "select_date", actions
+
+            # Skip practitioner step if already selected (e.g. "book with Dr. X")
+            if data.get("practitioner"):
+                data["state"] = "select_date"
+                await self._set_state(session_id, data)
                 dates = self._available_dates()
                 actions = [
                     {"label": self._format_date(d), "value": d, "action_type": "booking"} for d in dates
@@ -666,7 +1008,19 @@ class BookingService:
             practitioners = filter_practitioners_by_delivery_mode(practitioners, data["delivery_mode"])
 
             if not practitioners:
-                data["practitioner"] = None
+                if not data.get("practitioner"):
+                    data["practitioner"] = None
+                data["state"] = "select_date"
+                await self._set_state(session_id, data)
+                dates = self._available_dates()
+                actions = [
+                    {"label": self._format_date(d), "value": d, "action_type": "booking"} for d in dates
+                ]
+                actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                return "select_date", actions
+
+            # Skip practitioner step if already selected (e.g. "book with Dr. X")
+            if data.get("practitioner"):
                 data["state"] = "select_date"
                 await self._set_state(session_id, data)
                 dates = self._available_dates()
@@ -729,7 +1083,15 @@ class BookingService:
                 actions.append({"label": "No preference", "value": "No preference", "action_type": "booking"})
                 actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
                 return "practitioner_confused", actions
-            elif msg_lower in ("no preference",):
+            elif msg_lower in ("no preference",) or msg_words & {
+                "any", "anyone", "anybody", "either", "whoever", "whichever",
+                "available", "earliest", "first",
+            } or any(p in msg_lower for p in (
+                "no preference", "don't mind", "dont mind", "doesn't matter",
+                "doesnt matter", "don't care", "dont care", "up to you",
+                "you choose", "you pick", "any of them", "either one",
+                "whoever is available", "no particular",
+            )):
                 data["practitioner"] = None
             elif msg_lower in valid_names:
                 # Exact match — use properly-cased name
@@ -785,19 +1147,65 @@ class BookingService:
 
         # ── select_date ────────────────────────────────────────
         if state == "select_date":
+            msg_lower = message.strip().lower()
+
+            # "Earlier dates" → go back one page (check BEFORE "later" to avoid conflict)
+            if "earlier" in msg_lower and data.get("date_offset", 0) > 0:
+                current_offset = max(data.get("date_offset", 0) - 5, 0)
+                data["date_offset"] = current_offset
+                await self._set_state(session_id, data)
+                dates = self._available_dates(offset=current_offset)
+                actions = [
+                    {"label": self._format_date(d), "value": d, "action_type": "booking"} for d in dates
+                ]
+                actions.append({"label": "More Dates", "value": "Show more dates", "action_type": "quick_reply"})
+                if current_offset > 0:
+                    actions.append({"label": "Earlier Dates", "value": "earlier dates", "action_type": "quick_reply"})
+                actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                return "select_date", actions
+
+            # "Later" / "more dates" → show next batch
+            _LATER_PHRASES = (
+                "later", "more dates", "next week", "further", "other dates",
+                "anything else", "something else", "different date", "not these",
+                "none of these", "show more",
+            )
+            if any(phrase in msg_lower for phrase in _LATER_PHRASES):
+                current_offset = data.get("date_offset", 0) + 5
+                data["date_offset"] = current_offset
+                await self._set_state(session_id, data)
+                dates = self._available_dates(offset=current_offset)
+                actions = [
+                    {"label": self._format_date(d), "value": d, "action_type": "booking"} for d in dates
+                ]
+                actions.append({"label": "More Dates", "value": "Show more dates", "action_type": "quick_reply"})
+                actions.append({"label": "Earlier Dates", "value": "earlier dates", "action_type": "quick_reply"})
+                actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
+                return "select_date_later", actions
+
+            # Try exact ISO format first, then natural language matching
+            chosen_iso = None
             try:
                 chosen_date = datetime.strptime(message.strip(), "%Y-%m-%d").date()
                 if chosen_date <= date.today():
                     raise ValueError("Past date")
+                chosen_iso = message.strip()
             except ValueError:
-                dates = self._available_dates()
+                # Try matching natural language against available dates
+                offset = data.get("date_offset", 0)
+                available = self._available_dates(offset=offset)
+                chosen_iso = self._match_natural_date(msg_lower, available)
+
+            if not chosen_iso:
+                offset = data.get("date_offset", 0)
+                dates = self._available_dates(offset=offset)
                 actions = [
                     {"label": self._format_date(d), "value": d, "action_type": "booking"} for d in dates
                 ]
                 actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
                 return "invalid_date", actions
 
-            data["date"] = message.strip()
+            data["date"] = chosen_iso
             data["state"] = "select_time"
             await self._set_state(session_id, data)
 
@@ -811,8 +1219,14 @@ class BookingService:
         # ── select_time ────────────────────────────────────────
         if state == "select_time":
             valid_times = self._available_times()
-            if message.strip() not in valid_times:
-                # Try natural language time preference
+            chosen_time = message.strip() if message.strip() in valid_times else None
+
+            # Try natural language time matching: "16", "4 pm", "4pm", "2:00", etc.
+            if not chosen_time:
+                chosen_time = self._match_natural_time(message.strip().lower(), valid_times)
+
+            if not chosen_time:
+                # Try natural language time preference (morning/afternoon/evening)
                 suggested = self._parse_time_preference(message, valid_times)
                 if suggested:
                     actions = [
@@ -836,7 +1250,7 @@ class BookingService:
                 actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
                 return "invalid_time", actions
 
-            data["time"] = message.strip()
+            data["time"] = chosen_time
 
             # Skip name/phone collection if pre-filled (verified patient)
             if data.get("name") and data.get("phone"):

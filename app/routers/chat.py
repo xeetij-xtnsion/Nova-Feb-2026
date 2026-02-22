@@ -6,6 +6,7 @@ import asyncio
 import uuid
 import json
 import logging
+import re
 import time
 
 from app.schemas.chat import ChatRequest, ChatResponse, Action
@@ -22,7 +23,7 @@ from app.services.known_topics import detect_known_topic
 from app.services.patient_profiles import lookup_patient_by_phone, is_valid_phone_input
 from app.services.llm import PHONE_PROMPT_TEXT, PHONE_NO_MATCH_TEXT, PHONE_INVALID_TEXT
 from app.services.nlp_utils import word_match, any_word_match
-from app.config import settings
+from app.config import settings, practitioner_services
 
 logger = logging.getLogger(__name__)
 
@@ -274,7 +275,7 @@ _BROAD_TOPIC_ACTIONS: List[tuple] = [
      [
         Action(label="Book Appointment", value="I'd like to book an appointment", action_type="booking"),
         Action(label="Our Services", value="What services do you offer?", action_type="quick_reply"),
-        Action(label="Where are you?", value="Where is the clinic located?", action_type="quick_reply"),
+        Action(label="Our Location", value="Where is the clinic located?", action_type="quick_reply"),
     ]),
     (["how much", "what does it cost"], ["cost", "price", "fee", "pricing", "insurance"],
      [
@@ -470,15 +471,67 @@ _PRACTITIONER_KEYWORDS = {
     "nurani": "Dr. Ali Nurani",
     "marisa": "Dr. Marisa Hucal",
     "hucal": "Dr. Marisa Hucal",
-    "chad": "Dr. Chad Patterson",
-    "patterson": "Dr. Chad Patterson",
     "alexa": "Dr. Alexa Torontow",
     "torontow": "Dr. Alexa Torontow",
+    "madison": "Dr. Madison Thorne",
+    "thorne": "Dr. Madison Thorne",
     "lorena": "Lorena Bulcao",
     "bulcao": "Lorena Bulcao",
+    "emily": "Emily Wilton",
+    "wilton": "Emily Wilton",
 }
 # Note: practitioner matching uses word_match() to avoid "ali" matching
 # inside "specialist", "vitality", etc. See priority 6 in _generate_contextual_actions.
+
+# Words that suggest the user is asking about a specific person
+_PERSON_INDICATORS = (
+    "dr ", "dr. ", "doctor ", "does ", "is ",
+    "who is ", "about ", "meet ", "see ",
+)
+
+_PERSON_QUESTION_WORDS = ("work", "qualification", "credential", "available",
+                          "specialize", "experience", "background", "offer")
+
+
+def _extract_unknown_practitioner(question: str) -> Optional[str]:
+    """If the question asks about a person not on our team, return the mentioned name.
+
+    Returns the extracted name string (e.g. "Dr. Aisha") or None.
+    """
+    q = question.lower().strip()
+
+    # Must look like a person-related question
+    has_person_indicator = any(ind in q for ind in _PERSON_INDICATORS)
+    has_person_question = any(word_match(w, q) for w in _PERSON_QUESTION_WORDS)
+    if not (has_person_indicator or has_person_question):
+        return None
+
+    # Check it's NOT about a known practitioner
+    for keyword in _PRACTITIONER_KEYWORDS:
+        if word_match(keyword, q):
+            return None
+
+    # Heuristic: contains "dr"/"doctor" + a name
+    if any(ind in q for ind in ("dr ", "dr. ", "doctor ")):
+        # Extract the name after dr/doctor, stopping at common non-name words
+        _STOP_WORDS = {
+            "there", "here", "work", "works", "working", "available", "in",
+            "on", "at", "is", "are", "do", "does", "have", "has", "the",
+            "today", "tomorrow", "monday", "tuesday", "wednesday", "thursday",
+            "friday", "saturday", "sunday", "this", "next", "still",
+        }
+        m = re.search(r'(?:dr\.?\s+|doctor\s+)(\w+)', q)
+        if m:
+            name_parts = [m.group(1)]
+            # Try to grab a second word (last name) if it's not a stop word
+            rest = q[m.end():].strip()
+            m2 = re.match(r'(\w+)', rest)
+            if m2 and m2.group(1) not in _STOP_WORDS:
+                name_parts.append(m2.group(1))
+            return "Dr. " + " ".join(w.title() for w in name_parts)
+        return "that practitioner"
+
+    return None
 
 
 def _smart_booking_action(patient_type: Optional[str] = None) -> Action:
@@ -542,7 +595,7 @@ def _generate_contextual_actions(
         return [
             Action(label="What to Bring", value="What should I bring to my appointment?", action_type="quick_reply"),
             Action(label="Our Hours", value="What are your hours of operation?", action_type="quick_reply"),
-            Action(label="Where Are You?", value="Where is the clinic located?", action_type="quick_reply"),
+            Action(label="Our Location", value="Where is the clinic located?", action_type="quick_reply"),
         ]
 
     # 0c. Consultation context → show consultation-relevant actions
@@ -550,6 +603,7 @@ def _generate_contextual_actions(
         "meet and greet", "meet & greet",
         "initial consultation", "initial naturopathic",
         "initial injection", "initial iv",
+        "first time", "first visit", "first appointment",
     ]
     if any(kw in q_lower for kw in _CONSULT_CONTEXT_KW):
         return [
@@ -599,7 +653,7 @@ def _generate_contextual_actions(
     for keyword, name in _PRACTITIONER_KEYWORDS.items():
         if word_match(keyword, combined):
             return [
-                Action(label=f"Book with {name.split()[0]} {name.split()[-1]}", value="I'd like to book an appointment", action_type="booking"),
+                Action(label=f"Book with {name.split()[0]} {name.split()[-1]}", value=f"I'd like to book with {name}", action_type="booking"),
                 Action(label="Our Services", value="What services do you offer?", action_type="quick_reply"),
             ]
 
@@ -622,6 +676,15 @@ def _generate_contextual_actions(
     ]
 
 
+# ── Side question detection during booking ────────────────────────
+
+_QUESTION_STARTERS = (
+    "what ", "how ", "where ", "when ", "who ", "why ", "which ",
+    "does ", "do you ", "is ", "are ", "can ", "will ", "could ",
+    "tell me", "explain", "describe",
+)
+
+
 # ── Booking handler ───────────────────────────────────────────────
 
 async def _handle_booking_step(
@@ -634,6 +697,31 @@ async def _handle_booking_step(
     """Process one step of the booking flow and return a ChatResponse."""
     step_hint, actions = await booking.process_step(session_id, message, db)
 
+    # ── Rescheduling policy: answer the question, then offer to resume booking ──
+    if step_hint == "rescheduling_policy":
+        from app.services.known_topics import _build_topic_data
+        policy = _build_topic_data("rescheduling")
+        history = await memory.get_history(session_id)
+        answer = await llm_service.generate_known_topic_answer(
+            message, "rescheduling", policy, history
+        )
+        answer = llm_service.strip_citations(answer)
+        answer += "\n\nBy the way, you still have a booking in progress — just let me know when you'd like to continue!"
+        # Offer to resume the in-progress booking
+        actions = [
+            {"label": "Continue Booking", "value": "continue", "action_type": "booking"},
+            {"label": "Cancel Booking", "value": "Cancel", "action_type": "quick_reply"},
+        ]
+        await memory.add_exchange(session_id, message, answer)
+        return ChatResponse(
+            answer=answer,
+            citations=[],
+            session_id=session_id,
+            confidence="high",
+            max_similarity=None,
+            actions=[Action(**a) for a in actions],
+        )
+
     # Get booking data for LLM context
     state_data = await booking._get_state(session_id)
     booking_data = booking.get_booking_summary(state_data)
@@ -643,6 +731,7 @@ async def _handle_booking_step(
 
     # Generate natural language for this step
     answer = await llm_service.generate_booking_text(step_hint, booking_data, history)
+    answer = llm_service.strip_citations(answer)
 
     # Mark session so post-booking messages don't push more booking CTAs
     if step_hint == "booked":
@@ -716,6 +805,7 @@ async def _handle_known_topic(
     answer = await llm_service.generate_known_topic_answer(
         question, topic_name, topic_data, history
     )
+    answer = llm_service.strip_citations(answer)
     actions = _generate_contextual_actions(question, answer, patient_type, recently_booked=recently_booked)
     await memory.add_exchange(session_id, question, answer)
 
@@ -912,8 +1002,8 @@ async def chat(
                 confidence="high", max_similarity=None, actions=actions,
             )
 
-        # 0d. Patient type detection (first message)
-        detected = _detect_patient_type(question)
+        # 0d. Patient type detection (only if not already set)
+        detected = _detect_patient_type(question) if not patient_type else None
         if detected:
             await memory.set_meta(session_id, {"patient_type": detected})
             patient_type = detected
@@ -990,15 +1080,61 @@ async def chat(
                 "not sure", "no preference", "continue", "cancel",
                 "confirm", "yes", "no", "confirm booking",
                 "back to services", "back", "show services",
+                "in-person", "virtual",
+                # No-preference phrases for practitioner step
+                "any", "anyone", "either", "whoever", "whichever",
+                "doesn't matter", "doesnt matter", "don't mind", "dont mind",
+                # Date navigation
+                "show more dates", "earlier dates",
             })
+            # Also pass through date/time navigation phrases
+            _date_nav_phrases = (
+                "later", "more dates", "next week", "further", "other dates",
+                "anything else", "something else", "different date", "not these",
+                "none of these", "earlier dates", "show more",
+                "earlier", "sooner",
+                # Time preference phrases
+                "morning", "afternoon", "evening", "after work", "before lunch",
+                "show all times", "all times",
+            )
+            if any(phrase in msg_lower for phrase in _date_nav_phrases):
+                _booking_step_values.add(msg_lower)
+
+            # Pass through natural-language no-preference phrases at practitioner step
+            _no_pref_phrases = (
+                "any doctor", "any practitioner", "any therapist",
+                "any of them", "either one", "whoever is",
+                "don't care", "dont care", "you choose", "you pick",
+                "no particular", "up to you",
+                "anyone is fine", "any is fine", "doctor is fine",
+            )
+            if any(phrase in msg_lower for phrase in _no_pref_phrases):
+                _booking_step_values.add(msg_lower)
+
+            # Pass through consultation/service selection phrases during booking
+            # so they reach process_step instead of being intercepted as known topics
+            _service_selection_phrases = (
+                "meet and greet", "meet & greet", "free meet",
+                "initial consultation", "initial naturopathic",
+                "initial injection", "initial iv", "iv consultation",
+                "naturopathic medicine", "massage therapy", "acupuncture",
+                "massage", "osteopath",
+            )
+            if any(phrase in msg_lower for phrase in _service_selection_phrases):
+                _booking_step_values.add(msg_lower)
 
             # Allow general questions without breaking the booking flow.
             # BUT skip the known-topic intercept if the message expresses booking intent
             # (e.g. "no, I want to book meet and greet") — let process_step handle mid-flow restarts.
+            # Exception: rescheduling questions should always be answered even with booking words.
             _has_booking_intent = BookingService.is_booking_intent(question)
             known = None
-            if msg_lower not in _booking_step_values and not _has_booking_intent:
+            if msg_lower not in _booking_step_values:
                 known = detect_known_topic(question)
+                # If booking intent, only keep rescheduling topics — others (consultations,
+                # services) should go to process_step for mid-flow handling
+                if known and _has_booking_intent and known[0] != "rescheduling":
+                    known = None
             if known and known[0] != "booking":
                 topic_name, topic_data = known
                 history = await memory.get_history(session_id)
@@ -1029,6 +1165,116 @@ async def chat(
                     max_similarity=None,
                     actions=actions,
                 )
+
+            # ── Side question via RAG ──────────────────────────
+            # Catch questions that don't match known topics and answer via RAG.
+            # Prevents "invalid_date"/"invalid_phone" when users ask mid-booking.
+            if (msg_lower not in _booking_step_values
+                    and not _has_booking_intent
+                    and ("?" in question or any(msg_lower.startswith(s) for s in _QUESTION_STARTERS))):
+                state_data = await booking._get_state(session_id)
+                current_state = state_data.get("state", "idle")
+                # Only intercept beyond select_service (which has its own handlers)
+                if current_state not in ("idle", "booked", "select_service"):
+                    history = await memory.get_history(session_id)
+                    try:
+                        query_embedding = await embedding_service.embed_text(question)
+                        retrieval_result = await cache_service.get_retrieval(
+                            query_embedding, kb_version, settings.top_k
+                        )
+                        if not retrieval_result:
+                            retrieval_result = await retrieve_with_confidence(
+                                query_embedding, db,
+                                top_k=settings.top_k, kb_version=kb_version,
+                            )
+                            await cache_service.set_retrieval(
+                                query_embedding, kb_version, settings.top_k, retrieval_result
+                            )
+                        chunks = retrieval_result['chunks']
+                        is_confident = retrieval_result['is_confident']
+                        max_sim = retrieval_result['max_similarity']
+                        if chunks:
+                            answer = await llm_service.generate_answer(
+                                question, chunks, is_confident, history=history
+                            )
+                            if "KB_INSUFFICIENT_INFO" not in answer:
+                                answer = llm_service.strip_citations(answer)
+                                answer += "\n\nBy the way, you still have a booking in progress — just let me know when you'd like to continue!"
+                                await memory.add_exchange(session_id, question, answer)
+                                confidence = "high" if is_confident else "medium"
+                                asyncio.create_task(_record_analytics(
+                                    session_id=session_id, question=question, answer=answer,
+                                    response_source="llm", route_taken="booking_side_question",
+                                    confidence=confidence, max_similarity=max_sim,
+                                    chunk_count=len(chunks),
+                                    patient_type=patient_type, response_time_ms=_ms(),
+                                ))
+                                return ChatResponse(
+                                    answer=answer, citations=[], session_id=session_id,
+                                    confidence=confidence, max_similarity=max_sim,
+                                    actions=[
+                                        Action(label="Continue Booking", value="continue", action_type="booking"),
+                                        Action(label="Cancel Booking", value="Cancel", action_type="quick_reply"),
+                                    ],
+                                )
+                    except Exception as e:
+                        logger.warning(f"Side question RAG failed during booking: {e}")
+
+            # ── Affirmative after side question → resume or infer selection ──
+            _AFFIRM_SET = {
+                "sure", "yep", "yeah", "yes", "ok", "okay", "perfect",
+                "cool", "alright", "fine", "great", "thanks", "got it",
+            }
+            _AFFIRM_PHRASES = (
+                "sounds good", "let's do it", "lets do it", "go ahead",
+                "let's go", "lets go", "i'd like that", "i would like that",
+                "that sounds great", "that would be great", "yes please",
+                "thats fine", "that's fine", "got it thanks",
+            )
+            is_affirm_msg = (
+                set(msg_lower.split()) & _AFFIRM_SET
+                or any(p in msg_lower for p in _AFFIRM_PHRASES)
+            )
+            if is_affirm_msg and msg_lower not in _booking_step_values:
+                history = await memory.get_history(session_id)
+                last_bot_msg = ""
+                for msg in reversed(history):
+                    if msg.get("role") == "assistant":
+                        last_bot_msg = msg["content"]
+                        break
+
+                if "you still have a booking in progress" in last_bot_msg.lower():
+                    # Side question was just answered → resume current step
+                    question = "continue"
+                    logger.info("Affirmative after side question → resuming booking via 'continue'")
+                else:
+                    # No side question — try to infer service at select_service step
+                    state_data = await booking._get_state(session_id)
+                    current_state = state_data.get("state", "idle")
+                    if current_state == "select_service":
+                        _CONSULT_MAP = {
+                            "meet and greet": "Meet & Greet",
+                            "meet & greet": "Meet & Greet",
+                            "initial naturopathic": "Initial Naturopathic Consultation",
+                            "initial injection": "Initial Injection/IV Consultation",
+                            "initial iv": "Initial Injection/IV Consultation",
+                        }
+                        for msg in reversed(history):
+                            if msg.get("role") == "assistant":
+                                bot_text = msg["content"].lower()
+                                for phrase, label in _CONSULT_MAP.items():
+                                    if phrase in bot_text:
+                                        question = label
+                                        logger.info(f"Affirmative after side question → auto-selecting '{label}'")
+                                        break
+                                else:
+                                    # Check for service keywords
+                                    for kw, svc in SERVICE_KEYWORDS.items():
+                                        if word_match(kw, bot_text):
+                                            question = svc
+                                            logger.info(f"Affirmative after side question → auto-selecting '{svc}'")
+                                            break
+                                break
 
             resp = await _handle_booking_step(
                 session_id, question, booking, memory, db
@@ -1130,25 +1376,52 @@ async def chat(
             ))
             return known_resp
 
+        # ── Unknown practitioner short-circuit ──────────────
+        # Detect questions about people not on our team BEFORE the RAG pipeline,
+        # because the LLM may hallucinate plausible answers from unrelated chunks.
+        _unknown_name = _extract_unknown_practitioner(question)
+        if _unknown_name:
+            team_names = ", ".join(practitioner_services.keys())
+            answer = (
+                f"I'm sorry, I don't have {_unknown_name} listed on our team. "
+                f"Our current practitioners are: {team_names}. "
+                "Would you like to learn more about any of them, or can I help with something else?"
+            )
+            actions = [
+                Action(label="Meet the Team", value="Who are your practitioners?", action_type="quick_reply"),
+                _smart_booking_action(patient_type),
+            ]
+            await memory.add_exchange(session_id, question, answer)
+            asyncio.create_task(_record_analytics(
+                session_id=session_id, question=question, answer=answer,
+                response_source="unknown_practitioner", route_taken="rag",
+                confidence="high", patient_type=patient_type, response_time_ms=_ms(),
+            ))
+            return ChatResponse(
+                answer=answer, citations=[], session_id=session_id,
+                confidence="high", max_similarity=None, actions=actions,
+            )
+
         # Always check response cache before embedding+retrieval
         cached_response = await cache_service.get_response(question, kb_version)
         if cached_response:
             logger.info("Returning cached response")
+            cached_answer = llm_service.strip_citations(cached_response['answer'])
             actions = _generate_contextual_actions(
-                question, cached_response['answer'], patient_type,
+                question, cached_answer, patient_type,
                 recently_booked=recently_booked,
             )
             resp = ChatResponse(
-                answer=cached_response['answer'],
+                answer=cached_answer,
                 citations=[],
                 session_id=session_id,
                 confidence=cached_response['confidence'],
                 max_similarity=cached_response.get('max_similarity'),
                 actions=actions,
             )
-            await memory.add_exchange(session_id, question, cached_response['answer'])
+            await memory.add_exchange(session_id, question, cached_answer)
             asyncio.create_task(_record_analytics(
-                session_id=session_id, question=question, answer=cached_response['answer'],
+                session_id=session_id, question=question, answer=cached_answer,
                 response_source="cache_hit", route_taken="rag",
                 confidence=cached_response['confidence'],
                 max_similarity=cached_response.get('max_similarity'),
@@ -1156,10 +1429,36 @@ async def chat(
             ))
             return resp
 
+        # ── Context-aware query augmentation ──────────────
+        # Referential questions ("these options", "the difference", "which one")
+        # lose context when embedded in isolation. Prepend the topic from the
+        # last exchange so the embedding captures the right intent.
+        _REFERENTIAL_CUES = (
+            "these options", "those options", "the options", "the difference",
+            "which one", "which is", "what's the difference", "whats the difference",
+            "between them", "between these", "between those",
+            "all these", "all those", "any of these", "any of those",
+            "the first", "the second", "the third",
+            "this one", "that one", "the above",
+        )
+        embed_query = question
+        if any(cue in msg_lower for cue in _REFERENTIAL_CUES) and history:
+            # Extract topic from last assistant message
+            last_assistant = None
+            for msg in reversed(history):
+                if msg.get("role") == "assistant":
+                    last_assistant = msg["content"]
+                    break
+            if last_assistant:
+                # Use first 200 chars of last answer as context hint
+                context_hint = last_assistant[:200].replace("\n", " ")
+                embed_query = f"{context_hint} — {question}"
+                logger.info(f"Augmented referential query with conversation context")
+
         # Embed query
         logger.info(f"Processing query: {question[:100]}...")
         try:
-            query_embedding = await embedding_service.embed_text(question)
+            query_embedding = await embedding_service.embed_text(embed_query)
         except Exception as e:
             logger.error(f"Failed to embed query: {e}")
             raise HTTPException(status_code=500, detail="Failed to process query")
@@ -1211,13 +1510,26 @@ async def chat(
                 ))
                 return known_resp
 
-            # Truly unknown — generic fallback
-            answer = (
-                "I'm not sure I have enough info to answer that well, "
-                "but feel free to ask me about our services, hours, or anything "
-                "else about Nova Clinic!"
-            )
-            actions = _generate_contextual_actions(question, answer, patient_type, recently_booked=recently_booked)
+            # Truly unknown — check if it's about an unknown practitioner
+            _unknown_name2 = _extract_unknown_practitioner(question)
+            if _unknown_name2:
+                team_names = ", ".join(practitioner_services.keys())
+                answer = (
+                    f"I'm sorry, I don't have {_unknown_name2} listed on our team. "
+                    f"Our current practitioners are: {team_names}. "
+                    "Would you like to learn more about any of them, or can I help with something else?"
+                )
+                actions = [
+                    Action(label="Meet the Team", value="Who are your practitioners?", action_type="quick_reply"),
+                    _smart_booking_action(patient_type),
+                ]
+            else:
+                answer = (
+                    "I'm not sure I have enough info to answer that well, "
+                    "but feel free to ask me about our services, hours, or anything "
+                    "else about Nova Clinic!"
+                )
+                actions = _generate_contextual_actions(question, answer, patient_type, recently_booked=recently_booked)
             await memory.add_exchange(session_id, question, answer)
 
             asyncio.create_task(_record_analytics(
@@ -1260,11 +1572,25 @@ async def chat(
             # The LLM + guidelines will handle it appropriately.
             logger.info("No known topic match, passing low-confidence chunks to LLM")
 
+        # For referential questions, augment the question with what was shown
+        llm_question = question
+        if any(cue in msg_lower for cue in _REFERENTIAL_CUES) and history:
+            for msg in reversed(history):
+                if msg.get("role") == "assistant" and "[Options shown:" in msg["content"]:
+                    # Extract the options note
+                    opt_match = re.search(r'\[Options shown: (.+?)\]', msg["content"])
+                    if opt_match:
+                        llm_question = (
+                            f"The patient was just shown these options: {opt_match.group(1)}. "
+                            f"They are now asking: {question}"
+                        )
+                    break
+
         # Generate answer with LLM (includes history)
         logger.info(f"Generating answer with {len(chunks)} chunks")
         try:
             answer = await llm_service.generate_answer(
-                question, chunks, is_confident, history=history
+                llm_question, chunks, is_confident, history=history
             )
         except Exception as e:
             logger.error(f"Failed to generate answer: {e}")
@@ -1291,12 +1617,25 @@ async def chat(
                 ))
                 return known_resp
 
-            answer = (
-                "I'm not sure I have enough info to answer that well, "
-                "but feel free to ask me about our services, hours, or anything "
-                "else about Nova Clinic!"
-            )
-            actions = _generate_contextual_actions(question, answer, patient_type, recently_booked=recently_booked)
+            _unknown_name3 = _extract_unknown_practitioner(question)
+            if _unknown_name3:
+                team_names = ", ".join(practitioner_services.keys())
+                answer = (
+                    f"I'm sorry, I don't have {_unknown_name3} listed on our team. "
+                    f"Our current practitioners are: {team_names}. "
+                    "Would you like to learn more about any of them, or can I help with something else?"
+                )
+                actions = [
+                    Action(label="Meet the Team", value="Who are your practitioners?", action_type="quick_reply"),
+                    _smart_booking_action(patient_type),
+                ]
+            else:
+                answer = (
+                    "I'm not sure I have enough info to answer that well, "
+                    "but feel free to ask me about our services, hours, or anything "
+                    "else about Nova Clinic!"
+                )
+                actions = _generate_contextual_actions(question, answer, patient_type, recently_booked=recently_booked)
             await memory.add_exchange(session_id, question, answer)
 
             response_data = {
@@ -1364,8 +1703,12 @@ async def chat(
         }
         await cache_service.set_response(question, kb_version, response_data)
 
-        # Store exchange in memory
-        await memory.add_exchange(session_id, question, answer)
+        # Store exchange in memory (include action labels for referential context)
+        stored_answer = answer
+        action_labels = [a.label for a in actions if a.label not in ("← Back", "Our Services")]
+        if action_labels:
+            stored_answer += "\n\n[Options shown: " + " | ".join(action_labels) + "]"
+        await memory.add_exchange(session_id, question, stored_answer)
 
         logger.info("Successfully generated answer")
 

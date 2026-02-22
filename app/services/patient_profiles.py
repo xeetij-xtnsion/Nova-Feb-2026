@@ -26,7 +26,7 @@ MOCK_PATIENTS = [
     {
         "name": "Priya Patel",
         "phone": "(587) 555-0267",
-        "preferred_practitioner": "Dr. Chad Patterson",
+        "preferred_practitioner": "Dr. Madison Thorne",
         "last_visit": "Jan 28 — IV Nutrient Therapy",
         "upcoming_appointment": "Feb 20 — IV Drip",
         "total_visits": 5,
