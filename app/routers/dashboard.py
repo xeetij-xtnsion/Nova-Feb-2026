@@ -404,6 +404,42 @@ async def api_csat_trend(
         ]
 
 
+@router.get("/dashboard/api/sentiment-trend")
+async def api_sentiment_trend(
+    period: str = Query("7d", regex="^(today|7d|30d|all)$"),
+    dashboard_key: Optional[str] = Cookie(None),
+    key: Optional[str] = Query(None),
+):
+    if not _check_auth(key, dashboard_key):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    pf = _period_filter(period)
+    async with AsyncSessionLocal() as db:
+        q = (
+            select(
+                cast(ChatAnalytics.created_at, Date).label("day"),
+                func.sum(case((ChatAnalytics.sentiment == "positive", 1), else_=0)).label("positive"),
+                func.sum(case((ChatAnalytics.sentiment == "neutral", 1), else_=0)).label("neutral"),
+                func.sum(case((ChatAnalytics.sentiment == "negative", 1), else_=0)).label("negative"),
+            )
+            .group_by("day")
+            .order_by("day")
+        )
+        if pf is not None:
+            q = q.where(pf)
+        rows = (await db.execute(q)).all()
+
+        return [
+            {
+                "date": str(r.day),
+                "positive": r.positive or 0,
+                "neutral": r.neutral or 0,
+                "negative": r.negative or 0,
+            }
+            for r in rows
+        ]
+
+
 @router.get("/dashboard/api/session/{session_id}")
 async def api_session_detail(
     session_id: str,
@@ -664,26 +700,28 @@ def _login_html() -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nova Dashboard - Login</title>
+<title>Nova Analytics - Login</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
-:root{--teal:#2a9d8f;--teal-dark:#1f7a6f;--navy:#1a4b6e;--gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;--gray-400:#94a3b8;--gray-500:#64748b;--gray-600:#475569;--slate:#334155;--white:#fff;--radius:16px;--shadow:0 4px 6px -1px rgba(0,0,0,.07),0 2px 4px -2px rgba(0,0,0,.05);--shadow-xl:0 25px 60px -15px rgba(26,75,110,.25)}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',sans-serif;background:var(--gray-100);min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px}
-.card{background:var(--white);border-radius:var(--radius);box-shadow:var(--shadow-xl);padding:48px 40px;max-width:400px;width:100%;text-align:center}
-.card h1{font-size:22px;color:var(--navy);margin-bottom:8px}
-.card p{font-size:14px;color:var(--gray-500);margin-bottom:28px}
-.card input{width:100%;padding:12px 16px;border:1.5px solid var(--gray-200);border-radius:10px;font-size:14px;font-family:inherit;outline:none;transition:border .15s;margin-bottom:16px}
-.card input:focus{border-color:var(--teal)}
-.card button{width:100%;padding:13px;background:linear-gradient(135deg,var(--teal),var(--teal-dark));color:var(--white);border:none;border-radius:10px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:transform .15s}
-.card button:hover{transform:translateY(-1px)}
+body{font-family:'Inter',sans-serif;min-height:100vh;display:flex;align-items:center;justify-content:center;padding:16px;background:linear-gradient(135deg,#0f3552 0%,#1a4b6e 40%,#1f7a6f 70%,#2a9d8f 100%);background-attachment:fixed}
+.card{background:rgba(255,255,255,.82);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.35);border-radius:20px;box-shadow:0 25px 60px -15px rgba(0,0,0,.3),0 0 0 1px rgba(255,255,255,.1) inset;padding:48px 40px;max-width:400px;width:100%;text-align:center}
+.card img{height:52px;border-radius:12px;margin-bottom:16px}
+.card h1{font-size:24px;color:#1a4b6e;margin-bottom:4px;letter-spacing:-.5px}
+.card .subtitle{font-size:13px;font-weight:600;color:#2a9d8f;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:8px}
+.card p{font-size:14px;color:#64748b;margin-bottom:28px}
+.card input{width:100%;padding:13px 16px;border:1.5px solid #e2e8f0;border-radius:12px;font-size:14px;font-family:inherit;outline:none;transition:border .2s,box-shadow .2s;margin-bottom:16px;background:rgba(255,255,255,.7)}
+.card input:focus{border-color:#2a9d8f;box-shadow:0 0 0 3px rgba(42,157,143,.12)}
+.card button{width:100%;padding:14px;background:linear-gradient(135deg,#2a9d8f,#1f7a6f);color:#fff;border:none;border-radius:12px;font-size:14px;font-weight:600;font-family:inherit;cursor:pointer;transition:transform .15s,box-shadow .15s}
+.card button:hover{transform:translateY(-1px);box-shadow:0 8px 20px rgba(42,157,143,.3)}
 .error{color:#ef4444;font-size:13px;margin-bottom:12px;display:none}
 </style>
 </head>
 <body>
 <div class="card">
-<img src="/static/logo.webp" alt="Nova" style="height:48px;border-radius:10px;margin-bottom:12px">
-<h1>Nova Dashboard</h1>
+<img src="/static/logo.webp" alt="Nova">
+<h1>Nova Analytics</h1>
+<div class="subtitle">Nova Health</div>
 <p>Enter the dashboard password to continue.</p>
 <div class="error" id="err">Incorrect password. Please try again.</div>
 <form onsubmit="return go()">
@@ -709,52 +747,63 @@ def _dashboard_html() -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Nova Dashboard</title>
+<title>Nova Analytics</title>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
 <style>
-:root{--teal:#2a9d8f;--teal-light:#40b4a6;--teal-dark:#1f7a6f;--navy:#1a4b6e;--navy-dark:#0f3552;--slate:#334155;--gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;--gray-300:#cbd5e1;--gray-400:#94a3b8;--gray-500:#64748b;--gray-600:#475569;--gray-700:#334155;--white:#fff;--radius:16px;--radius-sm:10px;--shadow-sm:0 1px 2px rgba(0,0,0,.05);--shadow:0 4px 6px -1px rgba(0,0,0,.07),0 2px 4px -2px rgba(0,0,0,.05);--shadow-lg:0 20px 50px -12px rgba(0,0,0,.15)}
+:root{--teal:#2a9d8f;--teal-light:#40b4a6;--teal-dark:#1f7a6f;--navy:#1a4b6e;--navy-dark:#0f3552;--slate:#334155;--gray-50:#f8fafc;--gray-100:#f1f5f9;--gray-200:#e2e8f0;--gray-300:#cbd5e1;--gray-400:#94a3b8;--gray-500:#64748b;--gray-600:#475569;--gray-700:#334155;--white:#fff;--green:#22c55e;--amber:#f59e0b;--red:#ef4444;--radius:16px;--radius-sm:12px;--shadow-sm:0 1px 2px rgba(0,0,0,.04);--shadow:0 4px 12px -2px rgba(0,0,0,.06),0 2px 4px -2px rgba(0,0,0,.04);--shadow-lg:0 20px 50px -12px rgba(0,0,0,.12)}
 *{margin:0;padding:0;box-sizing:border-box}
-body{font-family:'Inter',sans-serif;background:var(--gray-100);color:var(--slate);min-height:100vh;padding:24px}
+body{font-family:'Inter',sans-serif;background:var(--gray-50);color:var(--slate);min-height:100vh;padding:24px 28px}
 
 /* ── Header ───────────────────────────────────── */
-.dash-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:0;flex-wrap:wrap;gap:12px}
-.dash-header h1{font-size:24px;color:var(--navy);letter-spacing:-.5px;display:flex;align-items:center;gap:10px}
-.dash-header h1 img{height:32px;width:auto;border-radius:6px}
+.dash-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:0;flex-wrap:wrap;gap:12px;padding-bottom:16px;border-bottom:1px solid var(--gray-200)}
+.dash-header h1{font-size:22px;color:var(--navy);letter-spacing:-.5px;display:flex;align-items:center;gap:10px;font-weight:700}
+.dash-header h1 img{height:34px;width:auto;border-radius:8px}
 .period-btns{display:flex;gap:6px}
-.period-btn{padding:7px 16px;border:1.5px solid var(--gray-200);border-radius:999px;background:var(--white);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;color:var(--gray-500);transition:all .15s}
-.period-btn:hover{border-color:var(--teal);color:var(--teal)}
-.period-btn.active{background:var(--teal);border-color:var(--teal);color:var(--white)}
+.period-btn{padding:8px 18px;border:1.5px solid var(--gray-200);border-radius:999px;background:var(--white);cursor:pointer;font-size:12px;font-weight:600;font-family:inherit;color:var(--gray-500);transition:all .2s}
+.period-btn:hover{border-color:var(--teal);color:var(--teal);background:rgba(42,157,143,.04)}
+.period-btn.active{background:linear-gradient(135deg,var(--teal),var(--teal-dark));border-color:transparent;color:var(--white);box-shadow:0 2px 8px rgba(42,157,143,.25)}
 
 /* ── Tab bar ──────────────────────────────────── */
 .tab-bar{display:flex;gap:0;border-bottom:2px solid var(--gray-200);margin:20px 0 24px 0;overflow-x:auto;-webkit-overflow-scrolling:touch}
-.tab-btn{padding:10px 20px;border:none;background:none;cursor:pointer;font-size:13px;font-weight:600;font-family:inherit;color:var(--gray-500);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .15s;white-space:nowrap}
+.tab-btn{padding:12px 22px;border:none;background:none;cursor:pointer;font-size:13.5px;font-weight:600;font-family:inherit;color:var(--gray-400);border-bottom:3px solid transparent;margin-bottom:-2px;transition:all .2s;white-space:nowrap;letter-spacing:-.1px}
 .tab-btn:hover{color:var(--teal)}
 .tab-btn.active{color:var(--teal);border-bottom-color:var(--teal)}
 
 /* ── Tab panels ───────────────────────────────── */
 .tab-panel{display:none}
 .tab-panel.active{display:block}
+.tab-icon{width:15px;height:15px;display:inline-block;vertical-align:-2px;margin-right:5px;opacity:.6;fill:currentColor}
+.tab-btn.active .tab-icon{opacity:1}
+.conv-num{display:inline-flex;align-items:center;justify-content:center;min-width:28px;height:22px;padding:0 7px;border-radius:6px;background:var(--teal);color:var(--white);font-size:11px;font-weight:700;font-family:'Inter',sans-serif;letter-spacing:-.3px}
 
 /* ── Stat cards ───────────────────────────────── */
-.stats-row{display:grid;grid-template-columns:repeat(6,1fr);gap:16px;margin-bottom:28px}
-.stat-card{background:var(--white);border-radius:var(--radius-sm);padding:20px;box-shadow:var(--shadow);text-align:center;transition:transform .15s}
-.stat-card:hover{transform:translateY(-2px)}
-.stat-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gray-400);margin-bottom:8px}
-.stat-value{font-size:28px;font-weight:700;color:var(--navy);letter-spacing:-1px}
-.stat-unit{font-size:12px;font-weight:500;color:var(--gray-500);margin-top:4px}
+.stats-row{display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:28px}
+.stat-card{background:var(--white);border-radius:var(--radius-sm);padding:22px 20px;box-shadow:var(--shadow);text-align:center;transition:transform .15s,box-shadow .15s;border-left:4px solid var(--gray-200);position:relative}
+.stat-card:hover{transform:translateY(-2px);box-shadow:var(--shadow-lg)}
+.stat-card.accent-teal{border-left-color:var(--teal)}
+.stat-card.accent-amber{border-left-color:var(--amber)}
+.stat-card.accent-red{border-left-color:var(--red)}
+.stat-card.accent-green{border-left-color:var(--green)}
+.stat-card.accent-navy{border-left-color:var(--navy)}
+.stat-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.6px;color:var(--gray-400);margin-bottom:10px}
+.stat-value{font-size:32px;font-weight:700;color:var(--navy);letter-spacing:-1px}
+.stat-unit{font-size:12px;font-weight:500;color:var(--gray-400);margin-top:4px}
 
-/* ── Charts row ───────────────────────────────── */
-.charts-row{display:grid;grid-template-columns:1fr 2fr;gap:16px;margin-bottom:28px}
-.chart-card{background:var(--white);border-radius:var(--radius-sm);padding:24px;box-shadow:var(--shadow)}
+/* ── Charts ───────────────────────────────────── */
+.chart-card{background:var(--white);border-radius:var(--radius-sm);padding:24px;box-shadow:var(--shadow);margin-bottom:28px}
 .chart-card h3{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:16px}
+.charts-row-2{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:28px}
 
 /* ── CSAT section ────────────────────────────────── */
 .csat-section{background:var(--white);border-radius:var(--radius-sm);padding:24px;box-shadow:var(--shadow);margin-bottom:28px}
 .csat-section h3{font-size:14px;font-weight:700;color:var(--navy);margin-bottom:16px}
 .csat-cards{display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:20px}
-.csat-card{background:var(--gray-50);border-radius:var(--radius-sm);padding:16px;text-align:center}
-.csat-card .stat-value{font-size:26px;font-weight:700;color:var(--navy);letter-spacing:-1px}
+.csat-card{background:var(--gray-50);border-radius:var(--radius-sm);padding:18px;text-align:center;border-left:4px solid var(--gray-200)}
+.csat-card.accent-teal{border-left-color:var(--teal)}
+.csat-card.accent-green{border-left-color:var(--green)}
+.csat-card.accent-red{border-left-color:var(--red)}
+.csat-card .stat-value{font-size:28px;font-weight:700;color:var(--navy);letter-spacing:-1px}
 .csat-card .stat-value.green{color:#16a34a}
 .csat-card .stat-value.red{color:#dc2626}
 .csat-card .stat-value.teal{color:var(--teal)}
@@ -766,8 +815,9 @@ body{font-family:'Inter',sans-serif;background:var(--gray-100);color:var(--slate
 table{width:100%;border-collapse:collapse;font-size:12px}
 th{text-align:left;padding:10px 12px;background:var(--gray-50);color:var(--gray-500);font-weight:700;text-transform:uppercase;letter-spacing:.4px;font-size:10px;border-bottom:2px solid var(--gray-200)}
 td{padding:10px 12px;border-bottom:1px solid var(--gray-100);color:var(--gray-600)}
-tr:hover td{background:var(--gray-50)}
-.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:10px;font-weight:600}
+tbody tr:nth-child(even) td{background:var(--gray-50)}
+tr:hover td{background:rgba(42,157,143,.04)}
+.badge{display:inline-block;padding:3px 10px;border-radius:999px;font-size:10px;font-weight:600}
 .badge-high{background:#dcfce7;color:#166534}
 .badge-medium{background:#fef9c3;color:#854d0e}
 .badge-low{background:#fee2e2;color:#991b1b}
@@ -779,30 +829,30 @@ tr:hover td{background:var(--gray-50)}
 .badge-cancelled{background:#fee2e2;color:#991b1b}
 
 /* ── Knowledge gaps ───────────────────────────── */
-.gap-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:12px}
-.gap-card{border:2px solid #fca5a5;border-radius:var(--radius-sm);padding:16px;background:#fff5f5}
-.gap-q{font-size:13px;font-weight:600;color:var(--slate);margin-bottom:8px}
+.gap-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+.gap-card{border:1.5px solid #fecaca;border-left:4px solid #f87171;border-radius:var(--radius-sm);padding:18px;background:#fefce8;background:linear-gradient(135deg,#fff7ed 0%,#fef2f2 100%)}
+.gap-q{font-size:13px;font-weight:600;color:var(--slate);margin-bottom:10px;line-height:1.5}
 .gap-meta{font-size:11px;color:var(--gray-500)}
 
 /* ── Pagination ───────────────────────────────── */
 .pagination{display:flex;justify-content:center;gap:6px;margin-top:16px}
-.page-btn{padding:6px 12px;border:1.5px solid var(--gray-200);border-radius:6px;background:var(--white);cursor:pointer;font-size:12px;font-family:inherit;color:var(--gray-500)}
+.page-btn{padding:7px 14px;border:1.5px solid var(--gray-200);border-radius:8px;background:var(--white);cursor:pointer;font-size:12px;font-family:inherit;color:var(--gray-500);transition:all .15s}
 .page-btn:hover{border-color:var(--teal);color:var(--teal)}
 .page-btn.active{background:var(--teal);border-color:var(--teal);color:var(--white)}
 .page-btn:disabled{opacity:.4;cursor:default}
 
 /* ── Session cards ────────────────────────────── */
-.session-cards{display:flex;flex-direction:column;gap:10px}
-.session-card{background:var(--white);border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);padding:16px 20px;cursor:pointer;transition:all .15s}
-.session-card:hover{border-color:var(--teal);box-shadow:0 4px 12px rgba(42,157,143,.12);transform:translateY(-1px)}
-.session-card-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
+.session-cards{display:flex;flex-direction:column;gap:12px}
+.session-card{background:var(--white);border:1.5px solid var(--gray-200);border-radius:var(--radius-sm);padding:18px 22px;cursor:pointer;transition:all .2s}
+.session-card:hover{border-color:var(--teal);box-shadow:0 6px 16px rgba(42,157,143,.1);transform:translateY(-1px)}
+.session-card-header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px}
 .session-card-header code{font-size:11px;color:var(--gray-600);font-weight:600}
 .session-card-header .badge{font-size:10px}
 .session-card-time{margin-left:auto;font-size:11px;color:var(--gray-400);white-space:nowrap}
-.session-summary{font-size:13px;color:var(--gray-600);line-height:1.5;margin-bottom:8px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
-.session-footer{display:flex;align-items:center;gap:12px;font-size:11px;color:var(--gray-400)}
+.session-summary{font-size:13px;color:var(--gray-600);line-height:1.5;margin-bottom:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:100%}
+.session-footer{display:flex;align-items:center;gap:14px;font-size:11px;color:var(--gray-400)}
 .session-footer span{display:inline-flex;align-items:center;gap:3px}
-.sentiment-dot{width:8px;height:8px;border-radius:50%;display:inline-block;flex-shrink:0}
+.sentiment-dot{width:9px;height:9px;border-radius:50%;display:inline-block;flex-shrink:0}
 .sentiment-dot.positive{background:#22c55e}
 .sentiment-dot.neutral{background:#eab308}
 .sentiment-dot.negative{background:#ef4444}
@@ -811,105 +861,117 @@ tr:hover td{background:var(--gray-50)}
 /* ── Bookings table ──────────────────────────── */
 .bookings-table-wrap{overflow-x:auto}
 
-/* ── Loading ──────────────────────────────────── */
+/* ── Loading / Empty states ──────────────────── */
 .loading-text{text-align:center;color:var(--gray-400);padding:40px;font-size:13px}
+.empty-state{text-align:center;color:var(--gray-400);padding:60px 20px;font-size:14px}
 
 /* ── Session detail modal ────────────────────── */
-.modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:1000;opacity:0;pointer-events:none;transition:opacity .25s}
+.modal-overlay{position:fixed;inset:0;background:rgba(15,53,82,.4);z-index:1000;opacity:0;pointer-events:none;transition:opacity .25s}
 .modal-overlay.open{opacity:1;pointer-events:auto}
-.modal-panel{position:fixed;top:0;right:-480px;width:480px;max-width:100vw;height:100vh;background:var(--white);box-shadow:-8px 0 30px rgba(0,0,0,.15);z-index:1001;display:flex;flex-direction:column;transition:right .3s ease}
+.modal-panel{position:fixed;top:0;right:-520px;width:520px;max-width:100vw;height:100vh;background:var(--white);box-shadow:-8px 0 40px rgba(0,0,0,.15);z-index:1001;display:flex;flex-direction:column;transition:right .3s ease}
 .modal-overlay.open .modal-panel{right:0}
-.modal-header{padding:20px 24px;border-bottom:1px solid var(--gray-200);display:flex;align-items:center;gap:12px;flex-shrink:0}
-.modal-header h3{flex:1;font-size:14px;font-weight:700;color:var(--navy);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.modal-close{width:32px;height:32px;border:none;background:var(--gray-50);border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--gray-500);font-size:18px;transition:all .15s;flex-shrink:0}
-.modal-close:hover{background:var(--gray-100);color:var(--slate)}
+.modal-header{padding:20px 24px;background:linear-gradient(135deg,var(--navy) 0%,var(--navy-dark) 100%);display:flex;align-items:center;gap:12px;flex-shrink:0}
+.modal-header h3{flex:1;font-size:14px;font-weight:700;color:var(--white);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.modal-close{width:32px;height:32px;border:none;background:rgba(255,255,255,.15);border-radius:50%;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--white);font-size:18px;transition:all .15s;flex-shrink:0}
+.modal-close:hover{background:rgba(255,255,255,.25)}
 .modal-stats{display:flex;gap:10px;padding:16px 24px;border-bottom:1px solid var(--gray-100);flex-wrap:wrap;flex-shrink:0}
-.modal-stat-badge{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border-radius:999px;font-size:11px;font-weight:600;background:var(--gray-50);color:var(--gray-600)}
+.modal-stat-badge{display:inline-flex;align-items:center;gap:4px;padding:5px 12px;border-radius:999px;font-size:11px;font-weight:600;background:var(--gray-50);color:var(--gray-600)}
 .modal-stat-badge.teal{background:#e0f2f1;color:var(--teal-dark)}
-.modal-thread{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:16px}
-.thread-q,.thread-a{max-width:92%;padding:12px 16px;border-radius:16px;font-size:13px;line-height:1.6;word-wrap:break-word;white-space:pre-wrap}
-.thread-q{background:var(--navy);color:var(--white);align-self:flex-end;border-bottom-right-radius:4px}
+.modal-thread{flex:1;overflow-y:auto;padding:20px 24px;display:flex;flex-direction:column;gap:18px}
+.thread-q,.thread-a{max-width:90%;padding:14px 18px;border-radius:18px;font-size:13px;line-height:1.65;word-wrap:break-word;white-space:pre-wrap}
+.thread-q{background:linear-gradient(135deg,var(--navy),var(--navy-dark));color:var(--white);align-self:flex-end;border-bottom-right-radius:4px;box-shadow:0 2px 8px rgba(26,75,110,.2)}
 .thread-a{background:var(--gray-50);color:var(--slate);border:1px solid var(--gray-200);align-self:flex-start;border-bottom-left-radius:4px}
-.thread-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.thread-meta{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
 .thread-meta .badge{font-size:9px;padding:2px 6px}
-.thread-fb{margin-top:4px;font-size:11px;font-weight:600}
+.thread-fb{margin-top:6px;font-size:11px;font-weight:600}
 .thread-fb.positive{color:#16a34a}
 .thread-fb.negative{color:#dc2626}
 
 /* ── Responsive ───────────────────────────────── */
 @media(max-width:900px){
-  .stats-row{grid-template-columns:repeat(3,1fr)!important}
-  .charts-row{grid-template-columns:1fr}
+  .stats-row{grid-template-columns:repeat(2,1fr)!important}
+  .charts-row-2{grid-template-columns:1fr}
   .csat-cards{grid-template-columns:repeat(2,1fr)}
   .tab-bar{gap:0}
   .tab-btn{padding:10px 14px;font-size:12px}
 }
 @media(max-width:600px){
   .modal-panel{width:100vw}
-}
-@media(max-width:600px){
   body{padding:12px}
-  .stats-row{grid-template-columns:repeat(2,1fr)}
-  .stat-value{font-size:22px}
-  .tab-btn{padding:8px 12px;font-size:11px}
+  .stats-row{grid-template-columns:1fr!important}
+  .stat-value{font-size:24px}
+  .tab-btn{padding:8px 10px;font-size:11px}
+  .csat-cards{grid-template-columns:1fr}
 }
 </style>
 </head>
 <body>
 
 <div class="dash-header">
-  <h1><img src="/static/logo.webp" alt="Nova">Nova Dashboard</h1>
+  <h1><img src="/static/logo.webp" alt="Nova">Nova Analytics</h1>
   <div class="period-btns">
     <button class="period-btn" data-p="today" onclick="setPeriod('today')">Today</button>
-    <button class="period-btn active" data-p="7d" onclick="setPeriod('7d')">7d</button>
-    <button class="period-btn" data-p="30d" onclick="setPeriod('30d')">30d</button>
-    <button class="period-btn" data-p="all" onclick="setPeriod('all')">All</button>
+    <button class="period-btn active" data-p="7d" onclick="setPeriod('7d')">7 Days</button>
+    <button class="period-btn" data-p="30d" onclick="setPeriod('30d')">30 Days</button>
+    <button class="period-btn" data-p="all" onclick="setPeriod('all')">All Time</button>
   </div>
 </div>
 
 <!-- Tab bar -->
 <div class="tab-bar">
-  <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')">Overview</button>
-  <button class="tab-btn" data-tab="conversations" onclick="switchTab('conversations')">Conversations</button>
-  <button class="tab-btn" data-tab="csat" onclick="switchTab('csat')">CSAT Score</button>
-  <button class="tab-btn" data-tab="gaps" onclick="switchTab('gaps')">Knowledge Gaps</button>
-  <button class="tab-btn" data-tab="bookings" onclick="switchTab('bookings')">Bookings</button>
+  <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Overview</button>
+  <button class="tab-btn" data-tab="conversations" onclick="switchTab('conversations')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Conversations</button>
+  <button class="tab-btn" data-tab="sentiment" onclick="switchTab('sentiment')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>Sentiment</button>
+  <button class="tab-btn" data-tab="csat" onclick="switchTab('csat')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>CSAT Score</button>
+  <button class="tab-btn" data-tab="gaps" onclick="switchTab('gaps')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.4-3 5.7V16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-1.3C6.3 13.4 5 11.5 5 9a7 7 0 0 1 7-7z"/><path d="M9 18h6"/><path d="M10 21h4"/></svg>Knowledge Gaps</button>
+  <button class="tab-btn" data-tab="bookings" onclick="switchTab('bookings')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Bookings</button>
 </div>
 
 <!-- ── Tab: Overview ──────────────────────────── -->
 <div class="tab-panel active" id="tab-overview">
   <div class="stats-row">
-    <div class="stat-card"><div class="stat-label">Total Chats</div><div class="stat-value" id="s-total">-</div></div>
-    <div class="stat-card"><div class="stat-label">Cache Hit %</div><div class="stat-value" id="s-cache">-</div><div class="stat-unit">of requests</div></div>
-    <div class="stat-card"><div class="stat-label">LLM Calls</div><div class="stat-value" id="s-llm">-</div></div>
-    <div class="stat-card"><div class="stat-label">Knowledge Gaps</div><div class="stat-value" id="s-gaps">-</div></div>
-    <div class="stat-card"><div class="stat-label">Avg Latency</div><div class="stat-value" id="s-latency">-</div><div class="stat-unit">ms</div></div>
-    <div class="stat-card"><div class="stat-label">Sentiment</div><div class="stat-value" id="s-sentiment" style="font-size:14px;line-height:1.6">-</div></div>
+    <div class="stat-card accent-teal"><div class="stat-label">Total Conversations</div><div class="stat-value" id="s-total">-</div></div>
+    <div class="stat-card accent-red"><div class="stat-label">Knowledge Gaps</div><div class="stat-value" id="s-gaps">-</div></div>
+    <div class="stat-card accent-amber"><div class="stat-label">Avg Response Time</div><div class="stat-value" id="s-latency">-</div><div class="stat-unit">ms</div></div>
+    <div class="stat-card accent-green"><div class="stat-label">CSAT Score</div><div class="stat-value" id="s-csat" style="color:var(--teal)">-</div><div class="stat-unit">%</div></div>
   </div>
-  <div class="charts-row">
-    <div class="chart-card"><h3>Source Distribution</h3><canvas id="donutChart"></canvas></div>
-    <div class="chart-card"><h3>Daily Volume</h3><canvas id="barChart"></canvas></div>
+  <div class="charts-row-2">
+    <div class="chart-card"><h3>Sentiment Breakdown</h3><div id="ovSentWrap" style="position:relative;max-width:260px;margin:0 auto"><canvas id="ovSentChart"></canvas></div><div id="ovSentLegend" style="text-align:center;margin-top:12px;font-size:12px;color:var(--gray-500)"></div></div>
+    <div class="chart-card"><h3>Daily Volume</h3><div style="height:260px"><canvas id="barChart"></canvas></div></div>
   </div>
 </div>
 
 <!-- ── Tab: Conversations ─────────────────────── -->
 <div class="tab-panel" id="tab-conversations">
   <div class="section">
-    <h3>Conversation Log</h3>
+    <h3>Conversation Sessions</h3>
     <div id="convTable"><div class="loading-text">Loading...</div></div>
     <div class="pagination" id="convPag"></div>
+  </div>
+</div>
+
+<!-- ── Tab: Sentiment ────────────────────────── -->
+<div class="tab-panel" id="tab-sentiment">
+  <div class="stats-row" style="grid-template-columns:repeat(3,1fr)">
+    <div class="stat-card accent-green"><div class="stat-label">Positive</div><div class="stat-value" id="sent-pos" style="color:#22c55e">-</div></div>
+    <div class="stat-card accent-amber"><div class="stat-label">Neutral</div><div class="stat-value" id="sent-neu" style="color:#f59e0b">-</div></div>
+    <div class="stat-card accent-red"><div class="stat-label">Negative</div><div class="stat-value" id="sent-neg" style="color:#ef4444">-</div></div>
+  </div>
+  <div class="charts-row-2">
+    <div class="chart-card"><h3>Sentiment Breakdown</h3><canvas id="sentDoughnut"></canvas></div>
+    <div class="chart-card"><h3>Sentiment Over Time</h3><div style="height:260px"><canvas id="sentTrend"></canvas></div></div>
   </div>
 </div>
 
 <!-- ── Tab: CSAT Score ────────────────────────── -->
 <div class="tab-panel" id="tab-csat">
   <div class="csat-section">
-    <h3>CSAT Score</h3>
+    <h3>Customer Satisfaction</h3>
     <div class="csat-cards">
-      <div class="csat-card"><div class="stat-label">CSAT</div><div class="stat-value teal" id="fb-sat">-</div><div class="stat-unit">%</div></div>
+      <div class="csat-card accent-teal"><div class="stat-label">CSAT</div><div class="stat-value teal" id="fb-sat">-</div><div class="stat-unit">%</div></div>
       <div class="csat-card"><div class="stat-label">Total Ratings</div><div class="stat-value" id="fb-total">-</div></div>
-      <div class="csat-card"><div class="stat-label">Thumbs Up</div><div class="stat-value green" id="fb-up">-</div></div>
-      <div class="csat-card"><div class="stat-label">Thumbs Down</div><div class="stat-value red" id="fb-down">-</div></div>
+      <div class="csat-card accent-green"><div class="stat-label">Thumbs Up</div><div class="stat-value green" id="fb-up">-</div></div>
+      <div class="csat-card accent-red"><div class="stat-label">Thumbs Down</div><div class="stat-value red" id="fb-down">-</div></div>
     </div>
     <div class="csat-chart-wrap"><canvas id="csatChart"></canvas></div>
   </div>
@@ -926,12 +988,12 @@ tr:hover td{background:var(--gray-50)}
 
 <!-- ── Tab: Bookings ─────────────────────────── -->
 <div class="tab-panel" id="tab-bookings">
-  <div class="stats-row" id="booking-stats-row">
-    <div class="stat-card"><div class="stat-label">Total</div><div class="stat-value" id="bk-total">-</div></div>
-    <div class="stat-card"><div class="stat-label">Pending</div><div class="stat-value" id="bk-pending" style="color:#854d0e">-</div></div>
-    <div class="stat-card"><div class="stat-label">Confirmed</div><div class="stat-value" id="bk-confirmed" style="color:#1e40af">-</div></div>
-    <div class="stat-card"><div class="stat-label">Completed</div><div class="stat-value" id="bk-completed" style="color:#166534">-</div></div>
-    <div class="stat-card"><div class="stat-label">Cancelled</div><div class="stat-value" id="bk-cancelled" style="color:#991b1b">-</div></div>
+  <div class="stats-row" id="booking-stats-row" style="grid-template-columns:repeat(5,1fr)">
+    <div class="stat-card accent-navy"><div class="stat-label">Total</div><div class="stat-value" id="bk-total">-</div></div>
+    <div class="stat-card accent-amber"><div class="stat-label">Pending</div><div class="stat-value" id="bk-pending" style="color:#854d0e">-</div></div>
+    <div class="stat-card accent-teal"><div class="stat-label">Confirmed</div><div class="stat-value" id="bk-confirmed" style="color:#1e40af">-</div></div>
+    <div class="stat-card accent-green"><div class="stat-label">Completed</div><div class="stat-value" id="bk-completed" style="color:#166534">-</div></div>
+    <div class="stat-card accent-red"><div class="stat-label">Cancelled</div><div class="stat-value" id="bk-cancelled" style="color:#991b1b">-</div></div>
   </div>
   <div class="section">
     <h3>Appointments</h3>
@@ -956,17 +1018,14 @@ tr:hover td{background:var(--gray-50)}
 let period = '7d';
 let activeTab = 'overview';
 let tabLoaded = {};
-let donutChart = null;
 let barChart = null;
+let ovSentChart = null;
 let csatChart = null;
+let sentDoughnut = null;
+let sentTrend = null;
 let convPage = 1;
 let gapPage = 1;
 let bookingPage = 1;
-
-const SRC_COLORS = {
-  cache_hit:'#22c55e', llm:'#3b82f6', known_topic:'#a855f7',
-  booking:'#f59e0b', fallback:'#ef4444', patient_type:'#64748b'
-};
 
 function switchTab(tab) {
   activeTab = tab;
@@ -1017,15 +1076,21 @@ function fmtTime(iso) {
 async function loadTab(tab) {
   try {
     if (tab === 'overview') {
-      var [overview, sources, timeline] = await Promise.all([
+      var [overview, timeline, feedback] = await Promise.all([
         api('overview'),
-        api('source-distribution'),
         api('conversations-over-time'),
+        api('feedback-summary'),
       ]);
-      renderOverview(overview, sources, timeline);
+      renderOverview(overview, timeline, feedback);
     } else if (tab === 'conversations') {
       var convos = await api('sessions?page=' + convPage);
       renderConvos(convos);
+    } else if (tab === 'sentiment') {
+      var [overview, trend] = await Promise.all([
+        api('overview'),
+        api('sentiment-trend'),
+      ]);
+      renderSentiment(overview, trend);
     } else if (tab === 'csat') {
       var [feedback, csatTrend] = await Promise.all([
         api('feedback-summary'),
@@ -1049,36 +1114,103 @@ async function loadTab(tab) {
   }
 }
 
-function renderOverview(overview, sources, timeline) {
+function renderOverview(overview, timeline, feedback) {
   document.getElementById('s-total').textContent = overview.total_chats.toLocaleString();
-  document.getElementById('s-cache').textContent = overview.cache_hit_pct + '%';
-  document.getElementById('s-llm').textContent = overview.llm_calls.toLocaleString();
   document.getElementById('s-gaps').textContent = overview.knowledge_gaps.toLocaleString();
   document.getElementById('s-latency').textContent = overview.avg_latency_ms.toLocaleString();
+  document.getElementById('s-csat').textContent = feedback.satisfaction_pct || 0;
 
+  // ── Sentiment doughnut ──
   var sd = overview.sentiment_distribution || {};
-  document.getElementById('s-sentiment').innerHTML =
-    '<span style="color:#22c55e">' + (sd.positive || 0) + ' pos</span><br>' +
-    '<span style="color:#eab308">' + (sd.neutral || 0) + ' neu</span><br>' +
-    '<span style="color:#ef4444">' + (sd.negative || 0) + ' neg</span>';
+  var pos = sd.positive || 0, neu = sd.neutral || 0, neg = sd.negative || 0;
+  var sentTotal = pos + neu + neg;
+  if (ovSentChart) ovSentChart.destroy();
+  if (sentTotal === 0) {
+    document.getElementById('ovSentWrap').innerHTML = '<div class="empty-state">No sentiment data yet</div>';
+    document.getElementById('ovSentLegend').innerHTML = '';
+  } else {
+    ovSentChart = new Chart(document.getElementById('ovSentChart'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Positive', 'Neutral', 'Negative'],
+        datasets: [{data: [pos, neu, neg], backgroundColor: ['#22c55e','#f59e0b','#ef4444'], borderWidth: 3, borderColor: '#fff', hoverOffset: 6}]
+      },
+      options: {responsive: true, cutout: '62%', plugins: {legend: {display: false},
+        tooltip: {callbacks: {label: function(ctx) { var pct = sentTotal > 0 ? Math.round(ctx.raw / sentTotal * 100) : 0; return ctx.label + ': ' + ctx.raw + ' (' + pct + '%)'; }}}
+      }}
+    });
+    document.getElementById('ovSentLegend').innerHTML =
+      '<span style="color:#22c55e;font-weight:600">' + pos + '</span> positive &nbsp;&middot;&nbsp; ' +
+      '<span style="color:#f59e0b;font-weight:600">' + neu + '</span> neutral &nbsp;&middot;&nbsp; ' +
+      '<span style="color:#ef4444;font-weight:600">' + neg + '</span> negative';
+  }
 
-  var srcLabels = Object.keys(sources);
-  var srcData = Object.values(sources);
-  var srcColors = srcLabels.map(l => SRC_COLORS[l] || '#94a3b8');
-  if (donutChart) donutChart.destroy();
-  donutChart = new Chart(document.getElementById('donutChart'), {
-    type: 'doughnut',
-    data: {labels: srcLabels, datasets: [{data: srcData, backgroundColor: srcColors, borderWidth: 2, borderColor: '#fff'}]},
-    options: {responsive: true, plugins: {legend: {position: 'bottom', labels: {font: {size: 11, family: 'Inter'}}}}}
-  });
-
+  // ── Daily volume bar chart ──
   var barLabels = timeline.map(t => t.date);
   var barData = timeline.map(t => t.count);
   if (barChart) barChart.destroy();
+  if (barLabels.length === 0) {
+    document.getElementById('barChart').parentElement.innerHTML = '<div class="empty-state">No data yet for this period</div>';
+    return;
+  }
   barChart = new Chart(document.getElementById('barChart'), {
     type: 'bar',
-    data: {labels: barLabels, datasets: [{label: 'Conversations', data: barData, backgroundColor: 'rgba(42,157,143,0.7)', borderRadius: 6}]},
-    options: {responsive: true, plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true, ticks: {font: {size: 10}}}, x: {ticks: {font: {size: 10}}}}}
+    data: {labels: barLabels, datasets: [{label: 'Conversations', data: barData, backgroundColor: 'rgba(42,157,143,0.65)', hoverBackgroundColor: 'rgba(42,157,143,0.85)', borderRadius: 8, borderSkipped: false}]},
+    options: {responsive: true, maintainAspectRatio: false, plugins: {legend: {display: false}}, scales: {y: {beginAtZero: true, grid: {color: 'rgba(0,0,0,.04)'}, ticks: {font: {size: 10, family: 'Inter'}}}, x: {grid: {display: false}, ticks: {font: {size: 10, family: 'Inter'}}}}}
+  });
+}
+
+function renderSentiment(overview, trend) {
+  var sd = overview.sentiment_distribution || {};
+  var pos = sd.positive || 0;
+  var neu = sd.neutral || 0;
+  var neg = sd.negative || 0;
+
+  document.getElementById('sent-pos').textContent = pos.toLocaleString();
+  document.getElementById('sent-neu').textContent = neu.toLocaleString();
+  document.getElementById('sent-neg').textContent = neg.toLocaleString();
+
+  if (sentDoughnut) sentDoughnut.destroy();
+  var total = pos + neu + neg;
+  if (total === 0) {
+    document.getElementById('sentDoughnut').parentElement.querySelector('canvas').style.display = 'none';
+    document.getElementById('sentDoughnut').parentElement.innerHTML += '<div class="empty-state">No data yet for this period</div>';
+  } else {
+    sentDoughnut = new Chart(document.getElementById('sentDoughnut'), {
+      type: 'doughnut',
+      data: {
+        labels: ['Positive', 'Neutral', 'Negative'],
+        datasets: [{data: [pos, neu, neg], backgroundColor: ['#22c55e', '#f59e0b', '#ef4444'], borderWidth: 3, borderColor: '#fff', hoverOffset: 6}]
+      },
+      options: {responsive: true, cutout: '60%', plugins: {legend: {position: 'bottom', labels: {font: {size: 12, family: 'Inter'}, padding: 16, usePointStyle: true, pointStyleWidth: 10}}}}
+    });
+  }
+
+  if (sentTrend) sentTrend.destroy();
+  var trendLabels = trend.map(t => t.date);
+  if (trendLabels.length === 0) {
+    document.getElementById('sentTrend').parentElement.innerHTML = '<div class="empty-state">No data yet for this period</div>';
+    return;
+  }
+  sentTrend = new Chart(document.getElementById('sentTrend'), {
+    type: 'line',
+    data: {
+      labels: trendLabels,
+      datasets: [
+        {label: 'Positive', data: trend.map(t => t.positive), borderColor: '#22c55e', backgroundColor: 'rgba(34,197,94,0.08)', fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#22c55e', borderWidth: 2},
+        {label: 'Neutral', data: trend.map(t => t.neutral), borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.08)', fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#f59e0b', borderWidth: 2},
+        {label: 'Negative', data: trend.map(t => t.negative), borderColor: '#ef4444', backgroundColor: 'rgba(239,68,68,0.08)', fill: true, tension: 0.35, pointRadius: 3, pointBackgroundColor: '#ef4444', borderWidth: 2},
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {legend: {position: 'bottom', labels: {font: {size: 11, family: 'Inter'}, padding: 16, usePointStyle: true, pointStyleWidth: 10}}},
+      scales: {
+        y: {beginAtZero: true, grid: {color: 'rgba(0,0,0,.04)'}, ticks: {font: {size: 10, family: 'Inter'}}},
+        x: {grid: {display: false}, ticks: {font: {size: 10, family: 'Inter'}}}
+      }
+    }
   });
 }
 
@@ -1091,6 +1223,10 @@ function renderCSAT(feedback, csatTrend) {
   if (csatChart) csatChart.destroy();
   var csatLabels = csatTrend.map(t => t.date);
   var csatData = csatTrend.map(t => t.satisfaction_pct);
+  if (csatLabels.length === 0) {
+    document.getElementById('csatChart').parentElement.innerHTML = '<div class="empty-state">No data yet for this period</div>';
+    return;
+  }
   csatChart = new Chart(document.getElementById('csatChart'), {
     type: 'line',
     data: {
@@ -1099,9 +1235,9 @@ function renderCSAT(feedback, csatTrend) {
         label: 'CSAT %',
         data: csatData,
         borderColor: 'rgb(42,157,143)',
-        backgroundColor: 'rgba(42,157,143,0.1)',
+        backgroundColor: 'rgba(42,157,143,0.08)',
         fill: true,
-        tension: 0.3,
+        tension: 0.35,
         pointRadius: 4,
         pointBackgroundColor: 'rgb(42,157,143)',
         borderWidth: 2,
@@ -1112,8 +1248,8 @@ function renderCSAT(feedback, csatTrend) {
       maintainAspectRatio: false,
       plugins: {legend: {display: false}},
       scales: {
-        y: {beginAtZero: true, max: 100, ticks: {font: {size: 10}, callback: v => v + '%'}},
-        x: {ticks: {font: {size: 10}}}
+        y: {beginAtZero: true, max: 100, grid: {color: 'rgba(0,0,0,.04)'}, ticks: {font: {size: 10, family: 'Inter'}, callback: v => v + '%'}},
+        x: {grid: {display: false}, ticks: {font: {size: 10, family: 'Inter'}}}
       }
     }
   });
@@ -1121,19 +1257,20 @@ function renderCSAT(feedback, csatTrend) {
 
 function renderConvos(data) {
   if (!data.items || data.items.length === 0) {
-    document.getElementById('convTable').innerHTML = '<div class="loading-text">No conversations yet.</div>';
+    document.getElementById('convTable').innerHTML = '<div class="empty-state">No conversations yet for this period.</div>';
     document.getElementById('convPag').innerHTML = '';
     return;
   }
   var html = '<div class="session-cards">';
-  data.items.forEach(function(r) {
-    html += '<div class="session-card" onclick="openSession(\\'' + esc(r.session_id) + '\\')">';
+  var startNum = data.total - (data.page - 1) * data.per_page;
+  data.items.forEach(function(r, idx) {
+    var convNum = startNum - idx;
+    html += '<div class="session-card" onclick="openSession(\\'' + esc(r.session_id) + '\\',' + convNum + ')">';
     html += '<div class="session-card-header">';
+    html += '<span class="conv-num">#' + convNum + '</span>';
     html += '<span class="sentiment-dot ' + esc(r.sentiment_label) + '"></span>';
-    html += '<code>' + esc(r.session_id_short) + '</code>';
     html += '<span class="badge badge-src">' + esc(r.patient_type) + ' patient</span>';
     html += '<span class="badge">' + r.message_count + ' msgs</span>';
-    html += '<span class="badge">' + r.avg_latency_ms + 'ms</span>';
     html += '<span class="session-card-time">' + fmtTime(r.started_at) + '</span>';
     html += '</div>';
     var summary = r.first_question || '';
@@ -1144,7 +1281,8 @@ function renderConvos(data) {
     html += '<span>' + upDown + '</span>';
     html += '<span>' + r.knowledge_gaps + ' knowledge gap' + (r.knowledge_gaps !== 1 ? 's' : '') + '</span>';
     if (r.sentiment_score !== null) {
-      html += '<span>sentiment: ' + r.sentiment_score + '%</span>';
+      var sColor = r.sentiment_label === 'positive' ? '#22c55e' : r.sentiment_label === 'negative' ? '#ef4444' : '#f59e0b';
+      html += '<span style="color:' + sColor + '">' + r.sentiment_label + '</span>';
     }
     html += '</div>';
     html += '</div>';
@@ -1164,7 +1302,7 @@ function renderConvos(data) {
 
 function renderGaps(data) {
   if (!data.items || data.items.length === 0) {
-    document.getElementById('gapCards').innerHTML = '<div class="loading-text">No knowledge gaps found.</div>';
+    document.getElementById('gapCards').innerHTML = '<div class="empty-state">No knowledge gaps found for this period.</div>';
     document.getElementById('gapPag').innerHTML = '';
     return;
   }
@@ -1174,7 +1312,6 @@ function renderGaps(data) {
     html += '<div class="gap-q">' + esc(r.question) + '</div>';
     html += '<div class="gap-meta">';
     html += fmtTime(r.created_at);
-    html += ' &middot; <span class="badge badge-src">' + esc(r.response_source) + '</span>';
     if (r.max_similarity !== null) html += ' &middot; similarity: ' + r.max_similarity;
     html += '</div></div>';
   });
@@ -1201,7 +1338,7 @@ function renderBookingStats(stats) {
 
 function renderBookings(data) {
   if (!data.items || data.items.length === 0) {
-    document.getElementById('bookingsTable').innerHTML = '<div class="loading-text">No bookings found.</div>';
+    document.getElementById('bookingsTable').innerHTML = '<div class="empty-state">No bookings found for this period.</div>';
     document.getElementById('bookingPag').innerHTML = '';
     return;
   }
@@ -1259,12 +1396,12 @@ async function loadBookings() {
   tabLoaded['bookings'] = true;
 }
 
-async function openSession(sessionId) {
+async function openSession(sessionId, convNum) {
   if (!sessionId) return;
   var overlay = document.getElementById('modalOverlay');
   var thread = document.getElementById('modalThread');
   var stats = document.getElementById('modalStats');
-  document.getElementById('modalTitle').textContent = 'Session ' + sessionId.substring(0,8) + '...';
+  document.getElementById('modalTitle').textContent = convNum ? 'Conversation #' + convNum : 'Conversation';
   stats.innerHTML = '';
   thread.innerHTML = '<div class="loading-text">Loading session...</div>';
   overlay.classList.add('open');
@@ -1284,7 +1421,7 @@ async function openSession(sessionId) {
     var avgLatency = totalMsgs > 0 ? Math.round(msgs.reduce(function(s, m) { return s + (m.response_time_ms || 0); }, 0) / totalMsgs) : 0;
     stats.innerHTML = '<span class="modal-stat-badge teal">' + esc(patientType) + ' patient</span>'
       + '<span class="modal-stat-badge">' + totalMsgs + ' messages</span>'
-      + '<span class="modal-stat-badge">' + avgLatency + 'ms avg latency</span>';
+      + '<span class="modal-stat-badge">' + avgLatency + 'ms avg</span>';
 
     if (msgs.length === 0) {
       thread.innerHTML = '<div class="loading-text">No messages found.</div>';
@@ -1295,14 +1432,11 @@ async function openSession(sessionId) {
       html += '<div class="thread-q">' + esc(m.question) + '</div>';
       html += '<div class="thread-a">' + esc(m.answer);
       html += '<div class="thread-meta">';
-      html += '<span class="badge badge-src">' + esc(m.response_source) + '</span>';
-      html += '<span class="badge badge-' + m.confidence + '">' + esc(m.confidence) + '</span>';
       if (m.sentiment) {
         var sCls = m.sentiment === 'positive' ? 'badge-high' : m.sentiment === 'negative' ? 'badge-low' : 'badge-medium';
         html += '<span class="badge ' + sCls + '">' + esc(m.sentiment) + '</span>';
       }
       if (m.response_time_ms !== null) html += '<span class="badge">' + m.response_time_ms + 'ms</span>';
-      if (m.max_similarity !== null) html += '<span class="badge">sim: ' + m.max_similarity + '</span>';
       html += '</div>';
       if (fbMap[m.question] !== undefined) {
         var r = fbMap[m.question];
@@ -1323,7 +1457,7 @@ function closeModal() {
 
 document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
 
-// Initial load — only Overview tab (3 API calls)
+// Initial load
 switchTab('overview');
 </script>
 </body>
