@@ -58,7 +58,14 @@ TOPICS: list[dict] = [
                      "contact number", "phone number", "call you",
                      "your address", "clinic address", "get directions",
                      "which floor", "what floor"],
-        "words": ["location", "address", "parking", "directions", "floor"],
+        "words": ["location", "address", "directions", "floor"],
+    },
+    {
+        "name": "parking",
+        "phrases": ["where do i park", "where to park", "is there parking",
+                     "parking available", "where can i park", "parking lot",
+                     "parking info"],
+        "words": ["parking", "park"],
     },
     {
         "name": "practitioners",
@@ -99,10 +106,19 @@ def _build_topic_data(topic_name: str) -> Dict:
         return {
             "detail": (
                 "Nova Naturopathic Integrative Clinic is located at "
-                "208-6707 Elbow Dr SW, Calgary, AB T2V 0E4 (Floor 1). "
-                "You can reach us at (587) 391-5753 or email admin@novaclinic.ca. "
-                "Free parking is available for up to 2 hours in unreserved yellow stalls "
-                "(basement or surface) — just register your license plate."
+                "208-6707 Elbow Dr SW, Calgary, AB T2V 0E4 — on the 2nd floor "
+                "of Mayfair Place (commercial side). When you get off the elevator, "
+                "turn left and it's the first set of glass doors across from the elevator. "
+                "You can reach us at (587) 391-5753 or email admin@novaclinic.ca."
+            ),
+        }
+
+    if topic_name == "parking":
+        return {
+            "detail": (
+                "Free parking is available at Mayfair Place for up to 2 hours "
+                "in unreserved yellow stalls (basement or surface lot). "
+                "Just register your license plate at the kiosk when you arrive."
             ),
         }
 

@@ -125,18 +125,6 @@ practitioner_services = {
         "areas_of_focus": "Pain management, musculoskeletal issues, stress management, women's health, facial acupuncture",
         "certifications": "Reiki, reflexology, Thai massage, yoga instruction, Ayurvedic medicine training (India)",
     },
-    "Emily Wilton": {
-        "title": "Dr. Acu, TCMD, RMT",
-        "credentials": "RMT, TCMD, Dr. Acu — 8+ years clinical experience",
-        "services": [
-            "Acupuncture",
-            "Cupping",
-            "Facial Rejuvenation",
-            "Massage Therapy",
-        ],
-        "areas_of_focus": "Chronic pain and tension, chronic illness, nervous system regulation, mobility, post-surgical rehab, scar tissue care",
-        "certifications": "IASTM (Instrument-Assisted Soft Tissue Mobilization), herbal medicine, cupping therapy",
-    },
 }
 
 

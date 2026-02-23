@@ -477,8 +477,6 @@ _PRACTITIONER_KEYWORDS = {
     "thorne": "Dr. Madison Thorne",
     "lorena": "Lorena Bulcao",
     "bulcao": "Lorena Bulcao",
-    "emily": "Emily Wilton",
-    "wilton": "Emily Wilton",
 }
 # Note: practitioner matching uses word_match() to avoid "ali" matching
 # inside "specialist", "vitality", etc. See priority 6 in _generate_contextual_actions.

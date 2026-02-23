@@ -13,7 +13,8 @@ doc.add_heading("ABOUT NOVA CLINIC — OUR STORY", level=1)
 doc.add_heading("Who We Are", level=2)
 doc.add_paragraph(
     "Nova Naturopathic Integrative Clinic is a Calgary South naturopathic clinic "
-    "located at 208-6707 Elbow Drive Southwest, Calgary, AB T2V 0E4. "
+    "located at 208-6707 Elbow Drive Southwest, Calgary, AB T2V 0E4 "
+    "(2nd floor, Mayfair Place building, commercial side). "
     "Nova Clinic won Calgary's Top Choice Alternative Health Services award in 2026."
 )
 
