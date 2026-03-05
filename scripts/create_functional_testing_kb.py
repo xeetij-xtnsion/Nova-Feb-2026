@@ -10,7 +10,28 @@ from pathlib import Path
 doc = Document()
 
 # ── Overview ──────────────────────────────────────────────────────────
-doc.add_heading("Functional Testing — Detailed Test Catalog", level=1)
+doc.add_heading("Testing at Nova Clinic — Overview", level=1)
+doc.add_paragraph(
+    "Testing ordered by the naturopathic doctor is not subsidized by the government of "
+    "Alberta and will be an out-of-pocket expense, but can be billed to extended health "
+    "insurance. Both types of testing require a naturopathic doctor consultation and will "
+    "be ordered only if the doctor feels that it is recommended and necessary."
+)
+
+doc.add_heading("Two Categories of Testing", level=2)
+doc.add_paragraph(
+    "There are two major categories of testing at Nova Clinic:\n\n"
+    "1. Standardized Testing — This is similar to what your family doctor is able to "
+    "order through Alberta Health Services. These are conventional lab tests such as "
+    "blood work, thyroid panels, cholesterol, blood sugar, and other routine diagnostics.\n\n"
+    "2. Functional Testing — These tests measure 'sub-clinical' imbalances — areas where "
+    "the body isn't 'broken' yet but is struggling to maintain balance. Functional tests "
+    "use blood, stool, saliva, or dried urine to capture data and provide extremely deep "
+    "insights about one's health. Nova Clinic has partnered with the best functional labs "
+    "in the world to be able to offer the very best functional tests for our patients."
+)
+
+doc.add_heading("Functional Testing — Detailed Test Catalog", level=2)
 doc.add_paragraph(
     "Nova Clinic offers 12 specialized functional and diagnostic tests to help patients "
     "and practitioners gain deeper insight into specific areas of health. All functional "
@@ -337,20 +358,43 @@ doc.add_paragraph(
     "dietary modifications, supplements, or IV therapy to support detoxification pathways."
 )
 
-# ── Comparison: Food Sensitivity vs Food Allergy ─────────────────────
-doc.add_heading("Food Sensitivity vs Food Allergy Testing — Key Differences", level=2)
+# ── Understanding Food Reactions ──────────────────────────────────────
+doc.add_heading("Understanding Food Reactions — Allergies, Sensitivities, and Intolerances", level=2)
 doc.add_paragraph(
-    "Nova Clinic offers two distinct food-related tests that are often confused. "
-    "The IgG Food Sensitivity Test detects delayed immune reactions (IgG antibodies) to "
-    "foods that may cause symptoms hours or days after eating. Common symptoms include "
-    "bloating, migraines, fatigue, and inflammation. The test uses a simple finger-prick "
-    "blood sample and results take 7–10 days."
+    "Food reactions can be of three types: food allergies, food sensitivities, and "
+    "food intolerances. While some people may think they have a food allergy, it might "
+    "be a food intolerance instead, especially if the symptoms involve histamine. Since "
+    "ALL adverse food reactions create inflammation in the body, it is important to "
+    "identify which food reaction is occurring and treat it accordingly. Testing may or "
+    "may not be required, but the naturopathic doctor will help identify the problem and "
+    "may request a test if necessary."
 )
 doc.add_paragraph(
-    "The IgE Food Allergy Test detects immediate allergic reactions (IgE antibodies) "
-    "that can cause symptoms within minutes, including hives, swelling, and anaphylaxis. "
-    "This test requires a standard blood draw. If a patient is unsure which test they "
-    "need, a naturopathic consultation will help determine the most appropriate option."
+    "Food Allergies (IgE-mediated): These are immediate immune reactions triggered by "
+    "IgE antibodies. Symptoms can appear within minutes and include hives, swelling, "
+    "difficulty breathing, and in severe cases, anaphylaxis. Food allergies are commonly "
+    "associated with histamine release — when the immune system overreacts, it triggers "
+    "mast cells to release histamine, causing many of the classic allergy symptoms. "
+    "Common allergens include peanuts, tree nuts, shellfish, milk, eggs, and wheat. "
+    "The IgE Food Allergy Test at Nova Clinic detects these true allergic responses."
+)
+doc.add_paragraph(
+    "Food Sensitivities (IgG-mediated): These are delayed immune reactions triggered by "
+    "IgG antibodies. Unlike food allergies and intolerances, food sensitivities are not "
+    "commonly associated with histamine. Symptoms may appear hours or even days after "
+    "eating and include bloating, migraines, fatigue, joint pain, skin issues, and "
+    "chronic inflammation. Because of the delay, food sensitivities are often harder to "
+    "identify without testing. The IgG Food Sensitivity Test at Nova Clinic helps "
+    "pinpoint these reactions."
+)
+doc.add_paragraph(
+    "Food Intolerances (non-immune): These are reactions that do not involve the immune "
+    "system directly. They are often caused by enzyme deficiencies (e.g. lactose "
+    "intolerance), sensitivity to food chemicals (e.g. histamine, sulfites, caffeine), "
+    "or other digestive issues. Symptoms typically involve the digestive system — gas, "
+    "bloating, diarrhea, stomach pain — and can often be mistaken for food allergies, "
+    "especially when histamine is involved. A naturopathic doctor can help distinguish "
+    "intolerances from true allergies or sensitivities and recommend the right approach."
 )
 
 # ── Which Test Is Right For Me ───────────────────────────────────────

@@ -56,7 +56,6 @@ class Settings(BaseSettings):
         "Acupuncture",
         "Naturopathic Medicine",
         "Massage Therapy",
-        "Initial Consultation",
     ]
     booking_hours_start: int = 9
     booking_hours_end: int = 17
@@ -78,7 +77,7 @@ practitioner_services = {
             "Prolotherapy",
             "Functional Testing",
         ],
-        "areas_of_focus": "Digestive health, weight management, endocrine, immune support, pain management, nervous system concerns",
+        "areas_of_focus": "Autoimmune conditions (all types including lupus, rheumatoid arthritis, Hashimoto's, Crohn's, MS, and more), cancer co-management (diet, cancer-focused IV nutrition therapies, botanical/herbal treatments), gut health and digestive health, weight management, endocrine, immune support, pain management, nervous system concerns",
         "certifications": "IV nutrient therapy, injection therapies, ozone therapy, regenerative injection therapy",
     },
     "Dr. Marisa Hucal": {
@@ -90,7 +89,7 @@ practitioner_services = {
             "IV Therapy",
             "Injections",
         ],
-        "areas_of_focus": "Weight management, digestive health, hormonal health (men and women), stress and mental health",
+        "areas_of_focus": "Gut health and digestive health, fertility, weight management, hormonal health (men and women), stress and mental health",
         "certifications": "Acupuncture, IV therapy, chelation and advanced IV therapies, prescribing upgrade, Metabolic Balance Certified Coach",
     },
     "Dr. Alexa Torontow": {
@@ -98,7 +97,7 @@ practitioner_services = {
         "credentials": "BHK (University of British Columbia), ND (Canadian College of Naturopathic Medicine)",
         "registrations": "CNDA, AAND",
         "services": ["Naturopathic Medicine"],
-        "areas_of_focus": "Women's hormonal health, fertility, pregnancy, postpartum care, perinatal support",
+        "areas_of_focus": "Gut health and digestive health, fertility, women's hormonal health, pregnancy, postpartum care, perinatal support",
         "certifications": "Trained Birth Doula",
     },
     "Dr. Madison Thorne": {

@@ -91,6 +91,7 @@ CONSULT_KEYWORDS = [
     "initial consultation", "consultation", "meet and greet", "meet & greet",
     "book a meeting", "schedule a meeting", "meet with a doctor",
     "meet with a naturopath", "meet with dr",
+    "naturopathic medicine", "naturopathic",
 ]
 
 
@@ -548,6 +549,7 @@ class BookingService:
                     "action_type": "booking",
                 })
             actions.append({"label": "Not sure", "value": "Not sure", "action_type": "booking"})
+            actions.append({"label": "Back to Services", "value": "back to services", "action_type": "quick_reply"})
             actions.append({"label": "Cancel", "value": "Cancel", "action_type": "quick_reply"})
             return "select_consultation_type", actions
 
@@ -925,6 +927,10 @@ class BookingService:
 
             data["service"] = chosen
             data.pop("show_consultation", None)
+
+            # ── Naturopathic Medicine → show consultation sub-options ──
+            if chosen == "Naturopathic Medicine":
+                return await _show_consultation()
 
             # ── Delivery mode gate ──
             modes = get_delivery_modes(data.get("service_display"), chosen)

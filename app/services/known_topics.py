@@ -47,6 +47,14 @@ TOPICS: list[dict] = [
         "words": ["reschedule", "rescheduling", "policy"],
     },
     {
+        "name": "testing",
+        "phrases": ["do you offer testing", "what tests do you", "lab tests",
+                     "do you do tests", "what kind of tests", "types of tests",
+                     "blood work", "blood test", "testing options",
+                     "functional testing", "diagnostic testing"],
+        "words": ["testing"],
+    },
+    {
         "name": "booking",
         "phrases": ["make an appointment"],
         "words": ["book", "booking", "appointment"],
@@ -138,7 +146,8 @@ def _build_topic_data(topic_name: str) -> Dict:
     if topic_name == "consultations":
         return {
             "detail": (
-                "Nova Clinic offers three consultation options for new patients:\n"
+                "Initial consultations are part of our Naturopathic Medicine service. "
+                "When you choose Naturopathic Medicine, you'll see three consultation options:\n"
                 "1. Initial Naturopathic Consultation — ~80 minutes, $295. "
                 "A comprehensive assessment with one of our naturopathic doctors.\n"
                 "2. Initial Injection/IV Consultation — ~80 minutes, from $290. "
@@ -175,6 +184,24 @@ def _build_topic_data(topic_name: str) -> Dict:
                 "- Call us at (587) 391-5753\n"
                 "- Email admin@novaclinic.ca\n"
                 "- Or manage your appointment through our online booking portal"
+            ),
+        }
+
+    if topic_name == "testing":
+        return {
+            "detail": (
+                "Nova Clinic offers two major categories of testing:\n\n"
+                "1. Standardized Testing — Similar to what your family doctor can order "
+                "through Alberta Health Services (blood work, thyroid panels, cholesterol, etc.).\n\n"
+                "2. Functional Testing — These tests measure 'sub-clinical' imbalances — areas "
+                "where the body isn't 'broken' yet but is struggling to maintain balance. They use "
+                "blood, stool, saliva, or dried urine to provide extremely deep insights about your "
+                "health. Nova Clinic has partnered with the best functional labs in the world to "
+                "offer the very best functional tests.\n\n"
+                "Important: Testing ordered by the naturopathic doctor is not subsidized by the "
+                "government of Alberta and will be an out-of-pocket expense, but can be billed to "
+                "extended health insurance. Both types of testing require a naturopathic doctor "
+                "consultation and will be ordered only if the doctor feels it is recommended and necessary."
             ),
         }
 
