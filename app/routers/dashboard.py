@@ -1569,7 +1569,7 @@ function renderVoiceSessions(data) {
   var html = '<div class="session-cards">';
   data.items.forEach(function(s, idx) {
     var num = data.total - ((data.page - 1) * data.per_page) - idx;
-    html += '<div class="session-card" onclick="openVoiceSession(\'' + esc(s.session_id) + '\', ' + num + ')">';
+    html += '<div class="session-card" onclick="openVoiceSession(\\'' + esc(s.session_id) + '\\', ' + num + ')">';
     html += '<div class="session-card-header">';
     html += '<code>' + esc(s.session_id_short) + '</code>';
     html += '<span class="badge badge-src">voice</span>';
