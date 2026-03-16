@@ -64,6 +64,7 @@ async def api_overview(
         return JSONResponse({"error": "unauthorized"}, status_code=401)
 
     pf = _period_filter(period)
+    chat_only = ChatAnalytics.response_source != "voice"
     async with AsyncSessionLocal() as db:
         q = select(
             func.count(ChatAnalytics.id).label("total"),
@@ -77,7 +78,7 @@ async def api_overview(
             func.sum(case((ChatAnalytics.sentiment == "positive", 1), else_=0)).label("sent_pos"),
             func.sum(case((ChatAnalytics.sentiment == "neutral", 1), else_=0)).label("sent_neu"),
             func.sum(case((ChatAnalytics.sentiment == "negative", 1), else_=0)).label("sent_neg"),
-        )
+        ).where(chat_only)
         if pf is not None:
             q = q.where(pf)
         row = (await db.execute(q)).one()
@@ -116,12 +117,14 @@ async def api_source_distribution(
         return JSONResponse({"error": "unauthorized"}, status_code=401)
 
     pf = _period_filter(period)
+    chat_only = ChatAnalytics.response_source != "voice"
     async with AsyncSessionLocal() as db:
         q = (
             select(
                 ChatAnalytics.response_source,
                 func.count(ChatAnalytics.id).label("count"),
             )
+            .where(chat_only)
             .group_by(ChatAnalytics.response_source)
         )
         if pf is not None:
@@ -140,12 +143,14 @@ async def api_conversations_over_time(
         return JSONResponse({"error": "unauthorized"}, status_code=401)
 
     pf = _period_filter(period)
+    chat_only = ChatAnalytics.response_source != "voice"
     async with AsyncSessionLocal() as db:
         q = (
             select(
                 cast(ChatAnalytics.created_at, Date).label("day"),
                 func.count(ChatAnalytics.id).label("count"),
             )
+            .where(chat_only)
             .group_by("day")
             .order_by("day")
         )
@@ -168,11 +173,13 @@ async def api_conversations(
     per_page = 20
     offset = (page - 1) * per_page
     pf = _period_filter(period)
+    chat_only = ChatAnalytics.response_source != "voice"
 
     async with AsyncSessionLocal() as db:
-        count_q = select(func.count(ChatAnalytics.id))
+        count_q = select(func.count(ChatAnalytics.id)).where(chat_only)
         data_q = (
             select(ChatAnalytics)
+            .where(chat_only)
             .order_by(ChatAnalytics.created_at.desc())
             .limit(per_page)
             .offset(offset)
@@ -224,10 +231,11 @@ async def api_sessions(
     per_page = 20
     offset = (page - 1) * per_page
     pf = _period_filter(period)
+    chat_only = ChatAnalytics.response_source != "voice"
 
     async with AsyncSessionLocal() as db:
-        # 1. Count distinct sessions
-        count_q = select(func.count(func.distinct(ChatAnalytics.session_id)))
+        # 1. Count distinct sessions (chat only)
+        count_q = select(func.count(func.distinct(ChatAnalytics.session_id))).where(chat_only)
         if pf is not None:
             count_q = count_q.where(pf)
         total = (await db.execute(count_q)).scalar() or 0
@@ -238,6 +246,7 @@ async def api_sessions(
                 ChatAnalytics.session_id,
                 func.max(ChatAnalytics.created_at).label("last_at"),
             )
+            .where(chat_only)
             .group_by(ChatAnalytics.session_id)
             .order_by(func.max(ChatAnalytics.created_at).desc())
             .limit(per_page)
@@ -414,6 +423,7 @@ async def api_sentiment_trend(
         return JSONResponse({"error": "unauthorized"}, status_code=401)
 
     pf = _period_filter(period)
+    chat_only = ChatAnalytics.response_source != "voice"
     async with AsyncSessionLocal() as db:
         q = (
             select(
@@ -422,6 +432,7 @@ async def api_sentiment_trend(
                 func.sum(case((ChatAnalytics.sentiment == "neutral", 1), else_=0)).label("neutral"),
                 func.sum(case((ChatAnalytics.sentiment == "negative", 1), else_=0)).label("negative"),
             )
+            .where(chat_only)
             .group_by("day")
             .order_by("day")
         )
@@ -540,6 +551,7 @@ async def api_knowledge_gaps(
                     "question": r.question,
                     "answer": r.answer[:200],
                     "response_source": r.response_source,
+                    "source_label": "Voice" if r.response_source == "voice" else "Chat",
                     "max_similarity": round(r.max_similarity, 3) if r.max_similarity else None,
                     "patient_type": r.patient_type,
                     "response_time_ms": r.response_time_ms,
@@ -1051,7 +1063,7 @@ tr:hover td{background:rgba(42,157,143,.04)}
 <!-- Tab bar -->
 <div class="tab-bar">
   <button class="tab-btn active" data-tab="overview" onclick="switchTab('overview')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Overview</button>
-  <button class="tab-btn" data-tab="conversations" onclick="switchTab('conversations')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Conversations</button>
+  <button class="tab-btn" data-tab="conversations" onclick="switchTab('conversations')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>Chat Conversations</button>
   <button class="tab-btn" data-tab="sentiment" onclick="switchTab('sentiment')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>Sentiment</button>
   <button class="tab-btn" data-tab="csat" onclick="switchTab('csat')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>CSAT Score</button>
   <button class="tab-btn" data-tab="gaps" onclick="switchTab('gaps')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.4-3 5.7V16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-1.3C6.3 13.4 5 11.5 5 9a7 7 0 0 1 7-7z"/><path d="M9 18h6"/><path d="M10 21h4"/></svg>Knowledge Gaps</button>
@@ -1062,7 +1074,7 @@ tr:hover td{background:rgba(42,157,143,.04)}
 <!-- ── Tab: Overview ──────────────────────────── -->
 <div class="tab-panel active" id="tab-overview">
   <div class="stats-row">
-    <div class="stat-card accent-teal"><div class="stat-label">Total Conversations</div><div class="stat-value" id="s-total">-</div></div>
+    <div class="stat-card accent-teal"><div class="stat-label">Chat Conversations</div><div class="stat-value" id="s-total">-</div></div>
     <div class="stat-card accent-red"><div class="stat-label">Knowledge Gaps</div><div class="stat-value" id="s-gaps">-</div></div>
     <div class="stat-card accent-amber"><div class="stat-label">Avg Response Time</div><div class="stat-value" id="s-latency">-</div><div class="stat-unit">ms</div></div>
     <div class="stat-card accent-green"><div class="stat-label">CSAT Score</div><div class="stat-value" id="s-csat" style="color:var(--teal)">-</div><div class="stat-unit">%</div></div>
@@ -1073,10 +1085,10 @@ tr:hover td{background:rgba(42,157,143,.04)}
   </div>
 </div>
 
-<!-- ── Tab: Conversations ─────────────────────── -->
+<!-- ── Tab: Chat Conversations ─────────────────── -->
 <div class="tab-panel" id="tab-conversations">
   <div class="section">
-    <h3>Conversation Sessions</h3>
+    <h3>Chat Sessions</h3>
     <div id="convTable"><div class="loading-text">Loading...</div></div>
     <div class="pagination" id="convPag"></div>
   </div>
@@ -1467,6 +1479,8 @@ function renderGaps(data) {
     html += '<div class="gap-card">';
     html += '<div class="gap-q">' + esc(r.question) + '</div>';
     html += '<div class="gap-meta">';
+    var srcCls = r.response_source === 'voice' ? 'badge-src' : 'badge-high';
+    html += '<span class="badge ' + srcCls + '" style="margin-right:6px">' + esc(r.source_label || 'Chat') + '</span>';
     html += fmtTime(r.created_at);
     if (r.max_similarity !== null) html += ' &middot; similarity: ' + r.max_similarity;
     html += '</div></div>';
