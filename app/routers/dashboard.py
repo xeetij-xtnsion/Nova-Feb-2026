@@ -674,6 +674,137 @@ async def api_bookings(
         }
 
 
+# ── Voice Calls API ──────────────────────────────────────────────
+
+@router.get("/dashboard/api/voice-overview")
+async def api_voice_overview(
+    period: str = Query("7d", regex="^(today|7d|30d|all)$"),
+    dashboard_key: Optional[str] = Cookie(None),
+    key: Optional[str] = Query(None),
+):
+    if not _check_auth(key, dashboard_key):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    pf = _period_filter(period)
+    async with AsyncSessionLocal() as db:
+        voice_filter = ChatAnalytics.response_source == "voice"
+        q = select(
+            func.count(ChatAnalytics.id).label("total"),
+            func.count(func.distinct(ChatAnalytics.session_id)).label("sessions"),
+            func.sum(case((ChatAnalytics.is_knowledge_gap.is_(True), 1), else_=0)).label("knowledge_gaps"),
+            func.sum(case((ChatAnalytics.route_taken == "booking", 1), else_=0)).label("bookings"),
+        )
+        q = q.where(voice_filter)
+        if pf is not None:
+            q = q.where(pf)
+        row = (await db.execute(q)).one()
+
+        # Voice bookings count
+        appt_filter = Appointment.notes.ilike("%voice%")
+        appt_q = select(func.count(Appointment.id))
+        if appt_filter is not None:
+            appt_q = appt_q.where(appt_filter)
+        apf = _appointment_period_filter(period)
+        if apf is not None:
+            appt_q = appt_q.where(apf)
+        voice_bookings = (await db.execute(appt_q)).scalar() or 0
+
+        return {
+            "total_turns": row.total or 0,
+            "total_sessions": row.sessions or 0,
+            "knowledge_gaps": row.knowledge_gaps or 0,
+            "voice_bookings": voice_bookings,
+        }
+
+
+@router.get("/dashboard/api/voice-sessions")
+async def api_voice_sessions(
+    page: int = Query(1, ge=1),
+    period: str = Query("7d", regex="^(today|7d|30d|all)$"),
+    dashboard_key: Optional[str] = Cookie(None),
+    key: Optional[str] = Query(None),
+):
+    if not _check_auth(key, dashboard_key):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    per_page = 20
+    offset = (page - 1) * per_page
+    pf = _period_filter(period)
+    voice_filter = ChatAnalytics.response_source == "voice"
+
+    async with AsyncSessionLocal() as db:
+        count_q = select(func.count(func.distinct(ChatAnalytics.session_id))).where(voice_filter)
+        if pf is not None:
+            count_q = count_q.where(pf)
+        total = (await db.execute(count_q)).scalar() or 0
+
+        page_q = (
+            select(
+                ChatAnalytics.session_id,
+                func.min(ChatAnalytics.created_at).label("started_at"),
+                func.max(ChatAnalytics.created_at).label("last_at"),
+                func.count(ChatAnalytics.id).label("turn_count"),
+            )
+            .where(voice_filter)
+            .group_by(ChatAnalytics.session_id)
+            .order_by(func.max(ChatAnalytics.created_at).desc())
+            .limit(per_page)
+            .offset(offset)
+        )
+        if pf is not None:
+            page_q = page_q.where(pf)
+        rows = (await db.execute(page_q)).all()
+
+        items = []
+        for r in rows:
+            items.append({
+                "session_id": r.session_id,
+                "session_id_short": r.session_id[:12] + "..." if r.session_id and len(r.session_id) > 12 else r.session_id,
+                "started_at": r.started_at.isoformat() if r.started_at else None,
+                "last_at": r.last_at.isoformat() if r.last_at else None,
+                "turn_count": r.turn_count,
+            })
+
+        return {
+            "page": page,
+            "per_page": per_page,
+            "total": total,
+            "pages": (total + per_page - 1) // per_page if total else 0,
+            "items": items,
+        }
+
+
+@router.get("/dashboard/api/voice-session/{session_id}")
+async def api_voice_session_detail(
+    session_id: str,
+    dashboard_key: Optional[str] = Cookie(None),
+    key: Optional[str] = Query(None),
+):
+    if not _check_auth(key, dashboard_key):
+        return JSONResponse({"error": "unauthorized"}, status_code=401)
+
+    async with AsyncSessionLocal() as db:
+        q = (
+            select(ChatAnalytics)
+            .where(ChatAnalytics.session_id == session_id)
+            .order_by(ChatAnalytics.created_at.asc())
+        )
+        messages = (await db.execute(q)).scalars().all()
+
+        return {
+            "session_id": session_id,
+            "messages": [
+                {
+                    "question": m.question,
+                    "answer": m.answer,
+                    "route_taken": m.route_taken,
+                    "created_at": m.created_at.isoformat() if m.created_at else None,
+                }
+                for m in messages
+            ],
+        }
+
+
 # ── Dashboard UI ──────────────────────────────────────────────────
 
 @router.get("/dashboard", response_class=HTMLResponse)
@@ -925,6 +1056,7 @@ tr:hover td{background:rgba(42,157,143,.04)}
   <button class="tab-btn" data-tab="csat" onclick="switchTab('csat')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M8 14s1.5 2 4 2 4-2 4-2"/><line x1="9" y1="9" x2="9.01" y2="9"/><line x1="15" y1="9" x2="15.01" y2="9"/></svg>CSAT Score</button>
   <button class="tab-btn" data-tab="gaps" onclick="switchTab('gaps')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a7 7 0 0 1 7 7c0 2.5-1.3 4.4-3 5.7V16a1 1 0 0 1-1 1H9a1 1 0 0 1-1-1v-1.3C6.3 13.4 5 11.5 5 9a7 7 0 0 1 7-7z"/><path d="M9 18h6"/><path d="M10 21h4"/></svg>Knowledge Gaps</button>
   <button class="tab-btn" data-tab="bookings" onclick="switchTab('bookings')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>Bookings</button>
+  <button class="tab-btn" data-tab="voice" onclick="switchTab('voice')"><svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>Voice Calls</button>
 </div>
 
 <!-- ── Tab: Overview ──────────────────────────── -->
@@ -1002,6 +1134,21 @@ tr:hover td{background:rgba(42,157,143,.04)}
   </div>
 </div>
 
+<!-- ── Tab: Voice Calls ──────────────────────── -->
+<div class="tab-panel" id="tab-voice">
+  <div class="stats-row" style="grid-template-columns:repeat(4,1fr)">
+    <div class="stat-card accent-teal"><div class="stat-label">Voice Sessions</div><div class="stat-value" id="vc-sessions">-</div></div>
+    <div class="stat-card accent-navy"><div class="stat-label">Total Turns</div><div class="stat-value" id="vc-turns">-</div></div>
+    <div class="stat-card accent-green"><div class="stat-label">Voice Bookings</div><div class="stat-value" id="vc-bookings" style="color:#166534">-</div></div>
+    <div class="stat-card accent-red"><div class="stat-label">Knowledge Gaps</div><div class="stat-value" id="vc-gaps" style="color:#991b1b">-</div></div>
+  </div>
+  <div class="section">
+    <h3>Voice Sessions</h3>
+    <div id="voiceSessionsList"><div class="loading-text">Loading...</div></div>
+    <div class="pagination" id="voicePag"></div>
+  </div>
+</div>
+
 <!-- Session detail modal (global) -->
 <div class="modal-overlay" id="modalOverlay" onclick="if(event.target===this)closeModal()">
   <div class="modal-panel">
@@ -1026,6 +1173,7 @@ let sentTrend = null;
 let convPage = 1;
 let gapPage = 1;
 let bookingPage = 1;
+let voicePage = 1;
 
 function switchTab(tab) {
   activeTab = tab;
@@ -1045,6 +1193,7 @@ function setPeriod(p) {
   convPage = 1;
   gapPage = 1;
   bookingPage = 1;
+  voicePage = 1;
   tabLoaded = {};
   document.querySelectorAll('.period-btn').forEach(b => {
     b.classList.toggle('active', b.dataset.p === p);
@@ -1107,6 +1256,13 @@ async function loadTab(tab) {
       ]);
       renderBookingStats(bkStats);
       renderBookings(bkList);
+    } else if (tab === 'voice') {
+      var [voiceOverview, voiceSessions] = await Promise.all([
+        api('voice-overview'),
+        api('voice-sessions?page=' + voicePage),
+      ]);
+      renderVoiceOverview(voiceOverview);
+      renderVoiceSessions(voiceSessions);
     }
     tabLoaded[tab] = true;
   } catch(e) {
@@ -1394,6 +1550,91 @@ async function loadBookings() {
   renderBookingStats(bkStats);
   renderBookings(bkList);
   tabLoaded['bookings'] = true;
+}
+
+function renderVoiceOverview(data) {
+  document.getElementById('vc-sessions').textContent = (data.total_sessions || 0).toLocaleString();
+  document.getElementById('vc-turns').textContent = (data.total_turns || 0).toLocaleString();
+  document.getElementById('vc-bookings').textContent = (data.voice_bookings || 0).toLocaleString();
+  document.getElementById('vc-gaps').textContent = (data.knowledge_gaps || 0).toLocaleString();
+}
+
+function renderVoiceSessions(data) {
+  var el = document.getElementById('voiceSessionsList');
+  if (!data.items || data.items.length === 0) {
+    el.innerHTML = '<div class="empty-state">No voice sessions found for this period.</div>';
+    document.getElementById('voicePag').innerHTML = '';
+    return;
+  }
+  var html = '<div class="session-cards">';
+  data.items.forEach(function(s, idx) {
+    var num = data.total - ((data.page - 1) * data.per_page) - idx;
+    html += '<div class="session-card" onclick="openVoiceSession(\'' + esc(s.session_id) + '\', ' + num + ')">';
+    html += '<div class="session-card-header">';
+    html += '<code>' + esc(s.session_id_short) + '</code>';
+    html += '<span class="badge badge-src">voice</span>';
+    html += '<span class="session-card-time">' + fmtTime(s.started_at) + '</span>';
+    html += '</div>';
+    html += '<div class="session-footer">';
+    html += '<span>' + s.turn_count + ' turn' + (s.turn_count !== 1 ? 's' : '') + '</span>';
+    if (s.last_at && s.started_at) {
+      var dur = Math.round((new Date(s.last_at) - new Date(s.started_at)) / 1000);
+      var mins = Math.floor(dur / 60);
+      var secs = dur % 60;
+      html += '<span>' + (mins > 0 ? mins + 'm ' : '') + secs + 's duration</span>';
+    }
+    html += '</div></div>';
+  });
+  html += '</div>';
+  el.innerHTML = html;
+
+  var pag = '';
+  pag += '<button class="page-btn" ' + (data.page <= 1 ? 'disabled' : '') + ' onclick="voicePage=' + (data.page - 1) + ';loadVoice()">&laquo;</button>';
+  for (var i = 1; i <= Math.min(data.pages, 5); i++) {
+    pag += '<button class="page-btn ' + (i === data.page ? 'active' : '') + '" onclick="voicePage=' + i + ';loadVoice()">' + i + '</button>';
+  }
+  if (data.pages > 5) pag += '<button class="page-btn" disabled>...</button>';
+  pag += '<button class="page-btn" ' + (data.page >= data.pages ? 'disabled' : '') + ' onclick="voicePage=' + (data.page + 1) + ';loadVoice()">&raquo;</button>';
+  document.getElementById('voicePag').innerHTML = pag;
+}
+
+async function loadVoice() {
+  tabLoaded['voice'] = false;
+  var [voiceOverview, voiceSessions] = await Promise.all([
+    api('voice-overview'),
+    api('voice-sessions?page=' + voicePage),
+  ]);
+  renderVoiceOverview(voiceOverview);
+  renderVoiceSessions(voiceSessions);
+  tabLoaded['voice'] = true;
+}
+
+async function openVoiceSession(sessionId, num) {
+  if (!sessionId) return;
+  var overlay = document.getElementById('modalOverlay');
+  var thread = document.getElementById('modalThread');
+  var stats = document.getElementById('modalStats');
+  document.getElementById('modalTitle').textContent = 'Voice Call #' + (num || '');
+  thread.innerHTML = '<div class="loading-text">Loading...</div>';
+  stats.innerHTML = '';
+  overlay.classList.add('open');
+
+  try {
+    var data = await api('voice-session/' + encodeURIComponent(sessionId));
+    stats.innerHTML = '<div class="modal-stat-badge teal">Voice Call</div><div class="modal-stat-badge">' + (data.messages ? data.messages.length : 0) + ' turns</div>';
+    var h = '';
+    (data.messages || []).forEach(function(m) {
+      h += '<div class="thread-q">' + esc(m.question) + '</div>';
+      h += '<div class="thread-a">' + esc(m.answer);
+      if (m.route_taken && m.route_taken !== 'standard') {
+        h += '<div class="thread-meta"><span class="badge badge-src">' + esc(m.route_taken) + '</span></div>';
+      }
+      h += '</div>';
+    });
+    thread.innerHTML = h || '<div class="empty-state">No messages in this session.</div>';
+  } catch(e) {
+    thread.innerHTML = '<div class="empty-state">Failed to load session.</div>';
+  }
 }
 
 async function openSession(sessionId, convNum) {
