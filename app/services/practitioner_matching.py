@@ -73,14 +73,34 @@ MODALITY_TIERS: Dict[str, Dict[str, int]] = {
     "iv_therapy": {
         "Dr. Ali Nurani": 1,
         "Dr. Marisa Hucal": 1,
-        "Dr. Alexa Torontow": 3,
+        "Dr. Alexa Torontow": 1,
     },
     "injections": {
         "Dr. Ali Nurani": 1,
         "Dr. Marisa Hucal": 1,
-        "Dr. Alexa Torontow": 3,
+        "Dr. Alexa Torontow": 1,
     },
-    "prolotherapy": {
+    "botanical": {
+        "Dr. Ali Nurani": 1,
+        "Dr. Marisa Hucal": 1,
+        "Dr. Alexa Torontow": 1,
+    },
+    "clinical_nutrition": {
+        "Dr. Ali Nurani": 1,
+        "Dr. Marisa Hucal": 1,
+        "Dr. Alexa Torontow": 1,
+    },
+    "lifestyle_coaching": {
+        "Dr. Ali Nurani": 1,
+        "Dr. Marisa Hucal": 1,
+        "Dr. Alexa Torontow": 1,
+    },
+    "functional_testing": {
+        "Dr. Ali Nurani": 1,
+        "Dr. Marisa Hucal": 1,
+        "Dr. Alexa Torontow": 2,
+    },
+    "orthopedic_injections": {
         "Dr. Ali Nurani": 1,
         "Dr. Marisa Hucal": 3,
         "Dr. Alexa Torontow": 3,
@@ -90,46 +110,52 @@ MODALITY_TIERS: Dict[str, Dict[str, int]] = {
         "Dr. Marisa Hucal": 3,
         "Dr. Alexa Torontow": 3,
     },
-    "botanical": {
-        "Dr. Ali Nurani": 1,
-        "Dr. Marisa Hucal": 1,
-        "Dr. Alexa Torontow": 1,
-    },
-    "nutrition": {
-        "Dr. Ali Nurani": 1,
-        "Dr. Marisa Hucal": 1,
-        "Dr. Alexa Torontow": 1,
-    },
     "acupuncture_nd": {
         "Dr. Ali Nurani": 3,
         "Dr. Marisa Hucal": 1,
-        "Dr. Alexa Torontow": 3,
+        "Dr. Alexa Torontow": 2,
+    },
+    "bio_regulatory": {
+        "Dr. Ali Nurani": 3,
+        "Dr. Marisa Hucal": 3,
+        "Dr. Alexa Torontow": 1,
+    },
+    "aesthetic_medicine": {
+        "Dr. Ali Nurani": 3,
+        "Dr. Marisa Hucal": 2,
+        "Dr. Alexa Torontow": 2,
+    },
+    "environmental_medicine": {
+        "Dr. Ali Nurani": 2,
+        "Dr. Marisa Hucal": 3,
+        "Dr. Alexa Torontow": 2,
     },
     "chelation": {
-        "Dr. Ali Nurani": 2,
-        "Dr. Marisa Hucal": 1,
+        "Dr. Ali Nurani": 3,
+        "Dr. Marisa Hucal": 3,
         "Dr. Alexa Torontow": 3,
     },
-    "functional_testing": {
-        "Dr. Ali Nurani": 1,
-        "Dr. Marisa Hucal": 1,
-        "Dr. Alexa Torontow": 1,
+    "homeopathy": {
+        "Dr. Ali Nurani": 3,
+        "Dr. Marisa Hucal": 3,
+        "Dr. Alexa Torontow": 3,
     },
-    "hormone_testing": {
-        "Dr. Ali Nurani": 2,
-        "Dr. Marisa Hucal": 1,
-        "Dr. Alexa Torontow": 1,
+    "physical_medicine": {
+        "Dr. Ali Nurani": 3,
+        "Dr. Marisa Hucal": 3,
+        "Dr. Alexa Torontow": 3,
     },
-    "food_sensitivity_testing": {
-        "Dr. Ali Nurani": 1,
-        "Dr. Marisa Hucal": 1,
-        "Dr. Alexa Torontow": 2,
+    "craniosacral": {
+        "Dr. Ali Nurani": 3,
+        "Dr. Marisa Hucal": 3,
+        "Dr. Alexa Torontow": 3,
     },
-    "gut_testing": {
-        "Dr. Ali Nurani": 1,
-        "Dr. Marisa Hucal": 1,
-        "Dr. Alexa Torontow": 2,
+    "laser_therapy": {
+        "Dr. Ali Nurani": 3,
+        "Dr. Marisa Hucal": 3,
+        "Dr. Alexa Torontow": 3,
     },
+    # Health-concern-adjacent modalities (prenatal/postpartum)
     "prenatal": {
         "Dr. Ali Nurani": 3,
         "Dr. Marisa Hucal": 2,
@@ -139,16 +165,6 @@ MODALITY_TIERS: Dict[str, Dict[str, int]] = {
         "Dr. Ali Nurani": 3,
         "Dr. Marisa Hucal": 2,
         "Dr. Alexa Torontow": 1,
-    },
-    "metabolic_balance": {
-        "Dr. Ali Nurani": 3,
-        "Dr. Marisa Hucal": 1,
-        "Dr. Alexa Torontow": 3,
-    },
-    "mold_toxin_testing": {
-        "Dr. Ali Nurani": 1,
-        "Dr. Marisa Hucal": 2,
-        "Dr. Alexa Torontow": 3,
     },
 }
 
@@ -203,44 +219,67 @@ MODALITY_KEYWORDS: Dict[str, str] = {
     "iv therapy": "iv_therapy", "iv drip": "iv_therapy",
     "iv nutrient": "iv_therapy", "intravenous": "iv_therapy",
     "iv infusion": "iv_therapy",
-    # injections
-    "injection": "injections", "intramuscular": "injections",
-    "vitamin injection": "injections", "b12 injection": "injections",
-    "trigger point": "injections",
-    # prolotherapy
-    "prolotherapy": "prolotherapy", "prolo": "prolotherapy",
-    "regenerative injection": "prolotherapy",
+    # injections (vitamin/B12/lipotropic shots)
+    "b12 injection": "injections", "b12 shot": "injections",
+    "vitamin injection": "injections", "vitamin shot": "injections",
+    "lipotropic": "injections", "vitamin d injection": "injections",
+    "intramuscular injection": "injections",
+    # orthopedic_injections (prolotherapy, TPI, neural therapy)
+    "prolotherapy": "orthopedic_injections", "prolo": "orthopedic_injections",
+    "trigger point injection": "orthopedic_injections",
+    "neural therapy": "orthopedic_injections",
+    "proloneural": "orthopedic_injections",
+    "regenerative injection": "orthopedic_injections",
     # ozone_therapy
     "ozone": "ozone_therapy", "ozone therapy": "ozone_therapy",
+    "mah": "ozone_therapy", "insufflation": "ozone_therapy",
     # botanical
     "botanical": "botanical", "herbal": "botanical", "herb": "botanical",
-    # nutrition
-    "nutrition": "nutrition", "nutritional": "nutrition",
+    "tincture": "botanical",
+    # clinical_nutrition
+    "nutrition": "clinical_nutrition", "nutritional": "clinical_nutrition",
+    "dietetics": "clinical_nutrition", "supplementation": "clinical_nutrition",
+    "metabolic balance": "clinical_nutrition",
+    # lifestyle_coaching
+    "lifestyle coaching": "lifestyle_coaching", "health coaching": "lifestyle_coaching",
+    "sleep hygiene": "lifestyle_coaching", "exercise prescription": "lifestyle_coaching",
     # acupuncture_nd
-    "acupuncture": "acupuncture_nd",
+    "acupuncture": "acupuncture_nd", "tcm": "acupuncture_nd",
+    "traditional chinese": "acupuncture_nd",
+    # functional_testing
+    "functional test": "functional_testing", "functional lab": "functional_testing",
+    "dutch": "functional_testing", "hormone test": "functional_testing",
+    "gi-360": "functional_testing", "gi 360": "functional_testing",
+    "gi-map": "functional_testing", "gi map": "functional_testing",
+    "gut test": "functional_testing", "sibo test": "functional_testing",
+    "sibo breath": "functional_testing",
+    "food sensitivity test": "functional_testing",
+    "food allergy test": "functional_testing",
+    # bio_regulatory
+    "bio-regulatory": "bio_regulatory", "bioregulatory": "bio_regulatory",
+    "bio regulatory": "bio_regulatory",
+    # aesthetic_medicine
+    "microneedling": "aesthetic_medicine", "cosmetic acupuncture": "aesthetic_medicine",
+    "naturopathic facial": "aesthetic_medicine",
+    # environmental_medicine
+    "mold": "environmental_medicine", "mycotox": "environmental_medicine",
+    "toxic load": "environmental_medicine", "gpl-tox": "environmental_medicine",
+    "heavy metal": "environmental_medicine", "mold detox": "environmental_medicine",
     # chelation
     "chelation": "chelation",
-    # functional_testing
-    "functional test": "functional_testing",
-    # hormone_testing
-    "dutch": "hormone_testing", "hormone test": "hormone_testing",
-    # food_sensitivity_testing
-    "food sensitivity": "food_sensitivity_testing",
-    "food allergy": "food_sensitivity_testing",
-    "food intolerance": "food_sensitivity_testing",
-    # gut_testing
-    "gi-360": "gut_testing", "gi 360": "gut_testing",
-    "gut test": "gut_testing", "sibo test": "gut_testing",
-    "sibo breath": "gut_testing",
-    # prenatal
+    # homeopathy
+    "homeopathy": "homeopathy", "homeopathic": "homeopathy",
+    # physical_medicine
+    "hydrotherapy": "physical_medicine",
+    "naturopathic manipulation": "physical_medicine",
+    # craniosacral
+    "craniosacral": "craniosacral",
+    # laser_therapy
+    "laser therapy": "laser_therapy", "cold laser": "laser_therapy",
+    "low-level laser": "laser_therapy", "lllt": "laser_therapy",
+    # prenatal / postpartum
     "prenatal": "prenatal", "pregnancy": "prenatal", "pregnant": "prenatal",
-    # postpartum
     "postpartum": "postpartum",
-    # metabolic_balance
-    "metabolic balance": "metabolic_balance",
-    # mold_toxin_testing
-    "mold": "mold_toxin_testing", "mycotox": "mold_toxin_testing",
-    "toxin": "mold_toxin_testing", "gpl-tox": "mold_toxin_testing",
 }
 
 
@@ -380,9 +419,9 @@ def get_tier_summary() -> str:
     lines.append("")
     lines.append("Key Modalities:")
     highlight_modalities = [
-        "iv_therapy", "injections", "prolotherapy", "ozone_therapy",
-        "acupuncture_nd", "chelation", "prenatal", "postpartum",
-        "metabolic_balance", "mold_toxin_testing",
+        "iv_therapy", "injections", "orthopedic_injections", "ozone_therapy",
+        "acupuncture_nd", "functional_testing", "bio_regulatory",
+        "aesthetic_medicine", "environmental_medicine", "prenatal", "postpartum",
     ]
     for mod in highlight_modalities:
         tiers = MODALITY_TIERS.get(mod, {})
