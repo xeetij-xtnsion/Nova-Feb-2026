@@ -26,7 +26,7 @@ MOCK_PATIENTS = [
     {
         "name": "Priya Patel",
         "phone": "(587) 555-0267",
-        "preferred_practitioner": "Dr. Madison Thorne",
+        "preferred_practitioner": "Dr. Ali Nurani",
         "last_visit": "Jan 28 — IV Nutrient Therapy",
         "upcoming_appointment": "Feb 20 — IV Drip",
         "total_visits": 5,

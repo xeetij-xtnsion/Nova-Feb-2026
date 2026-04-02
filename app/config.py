@@ -100,18 +100,6 @@ practitioner_services = {
         "areas_of_focus": "Gut health and digestive health, fertility, women's hormonal health, pregnancy, postpartum care, perinatal support",
         "certifications": "Trained Birth Doula",
     },
-    "Dr. Madison Thorne": {
-        "title": "Naturopathic Doctor (ND)",
-        "credentials": "Kinesiology degree, ND (Canadian College of Naturopathic Medicine)",
-        "registrations": "CNDA, AAND, CAND, Oncology Association of Naturopathic Doctors",
-        "services": [
-            "Naturopathic Medicine",
-            "IV Therapy",
-            "Injections",
-        ],
-        "areas_of_focus": "Women's hormonal health, general naturopathic medicine",
-        "certifications": "Acupuncture, IV therapy, intramuscular injection therapy",
-    },
     "Lorena Bulcao": {
         "title": "Dr. Ac, TCMD, RMT",
         "credentials": "Massage Therapy (Mount Royal College), TCMD (Calgary College of Chinese Medicine and Acupuncture)",

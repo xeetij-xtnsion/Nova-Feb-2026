@@ -24,6 +24,7 @@ from app.services.patient_profiles import lookup_patient_by_phone, is_valid_phon
 from app.services.llm import PHONE_PROMPT_TEXT, PHONE_NO_MATCH_TEXT, PHONE_INVALID_TEXT
 from app.services.nlp_utils import word_match, any_word_match
 from app.config import settings, practitioner_services
+from app.services.practitioner_matching import match_practitioners, get_best_practitioner
 
 logger = logging.getLogger(__name__)
 
@@ -421,8 +422,7 @@ _SYMPTOM_ACTIONS: List[tuple] = [
       "fertility treatment", "fertility support"],
      ["fertil", "fertility", "conceiv", "infertil", "ivf", "iui"],
      [
-        Action(label="Dr. Alexa Torontow", value="I'd like to book a consultation with Dr. Alexa Torontow for fertility support", action_type="quick_reply"),
-        Action(label="Dr. Marisa Hucal", value="I'd like to book a consultation with Dr. Marisa Hucal for fertility support", action_type="quick_reply"),
+        Action(label="Fertility Consultation", value="I'd like to book a consultation for fertility support", action_type="booking"),
         Action(label="Learn More", value="How can naturopathic medicine help with fertility?", action_type="quick_reply"),
     ]),
     (["low energy", "no energy", "always tired"],
@@ -471,7 +471,7 @@ _SYMPTOM_ACTIONS: List[tuple] = [
      ["cancer", "oncology", "tumor", "tumour", "chemo", "chemotherapy",
       "radiation", "carcinoma", "lymphoma", "leukemia"],
      [
-        Action(label="Consult Dr. Nurani", value="I'd like to book an initial consultation with Dr. Nurani for cancer co-management support", action_type="quick_reply"),
+        Action(label="Cancer Support Consultation", value="I'd like to book an initial consultation for cancer co-management support", action_type="booking"),
         Action(label="IV Nutrition Therapy", value="Tell me about cancer-focused IV nutrition therapies", action_type="quick_reply"),
         Action(label="Learn More", value="How can naturopathic medicine support cancer care?", action_type="quick_reply"),
     ]),
@@ -484,9 +484,9 @@ _SYMPTOM_ACTIONS: List[tuple] = [
       "alopecia areata", "pemphigus", "vasculitis", "addison",
       "uveitis", "sarcoidosis", "polymyalgia"],
      [
-        Action(label="Consult Dr. Nurani", value="I'd like to book an initial consultation with Dr. Nurani for autoimmune support", action_type="quick_reply"),
+        Action(label="Autoimmune Consultation", value="I'd like to book an initial consultation for autoimmune support", action_type="booking"),
         Action(label="Autoimmunity Screen", value="Tell me about the Antibody Array 5 autoimmunity test", action_type="quick_reply"),
-        Action(label="Learn More", value="What autoimmune conditions does Dr. Nurani treat?", action_type="quick_reply"),
+        Action(label="Learn More", value="What autoimmune conditions can naturopathic medicine help with?", action_type="quick_reply"),
     ]),
 ]
 
@@ -499,8 +499,6 @@ _PRACTITIONER_KEYWORDS = {
     "hucal": "Dr. Marisa Hucal",
     "alexa": "Dr. Alexa Torontow",
     "torontow": "Dr. Alexa Torontow",
-    "madison": "Dr. Madison Thorne",
-    "thorne": "Dr. Madison Thorne",
     "lorena": "Lorena Bulcao",
     "bulcao": "Lorena Bulcao",
 }
@@ -575,17 +573,32 @@ _NEW_PATIENT_SYMPTOM_ACTIONS = [
 
 
 def _build_symptom_actions(
-    info_actions: List[Action], patient_type: Optional[str] = None
+    info_actions: List[Action],
+    patient_type: Optional[str] = None,
+    question: str = "",
 ) -> List[Action]:
     """Build the full action list for a symptom match.
 
     New patients get consultation entry points (Initial Consultation,
     Meet & Greet) since they need an assessment before choosing a service.
     Returning patients get service-specific drill-down buttons.
+
+    If *question* is provided, the tier-matching system may insert a
+    "Book with [Best Doctor]" button as the first action.
     """
     if patient_type == "new":
         return _NEW_PATIENT_SYMPTOM_ACTIONS
-    return [_smart_booking_action(patient_type)] + info_actions + [_BACK_BTN]
+    actions = [_smart_booking_action(patient_type)] + info_actions + [_BACK_BTN]
+    if question:
+        best = get_best_practitioner(question)
+        if best:
+            book_action = Action(
+                label=f"Book with {best.split()[0]} {best.split()[-1]}",
+                value=f"I'd like to book with {best}",
+                action_type="booking",
+            )
+            actions.insert(0, book_action)
+    return actions
 
 
 def _generate_contextual_actions(
@@ -644,7 +657,7 @@ def _generate_contextual_actions(
     # 2. Symptoms in QUESTION → consultation-first actions
     for phrases, words, info_actions in _SYMPTOM_ACTIONS:
         if any(p in q_lower for p in phrases) or any_word_match(words, q_lower):
-            return _build_symptom_actions(info_actions, patient_type)
+            return _build_symptom_actions(info_actions, patient_type, question=question)
 
     # 3. Services in QUESTION → service sub-actions
     for phrases, words, actions in _SERVICE_ACTIONS:
@@ -670,7 +683,7 @@ def _generate_contextual_actions(
     # 5. Symptoms in ANSWER (fallback — the LLM discussed symptoms)
     for phrases, words, info_actions in _SYMPTOM_ACTIONS:
         if any(p in a_lower for p in phrases) or any_word_match(words, a_lower):
-            return _build_symptom_actions(info_actions, patient_type)
+            return _build_symptom_actions(info_actions, patient_type, question=question)
 
     # 6. Practitioner mention → offer to book with them (word-boundary matching)
     combined = q_lower + " " + a_lower

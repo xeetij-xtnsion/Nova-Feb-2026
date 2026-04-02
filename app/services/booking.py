@@ -14,6 +14,7 @@ from app.config import (
 )
 from app.models.appointment import Appointment, AppointmentStatus
 from app.services.nlp_utils import word_match
+from app.services.practitioner_matching import get_best_practitioner
 
 logger = logging.getLogger(__name__)
 
@@ -250,6 +251,19 @@ class BookingService:
         return f"{n}{['th','st','nd','rd','th','th','th','th','th','th'][n % 10]}"
 
     @staticmethod
+    def _smart_match_practitioner(data: Dict, practitioners: List[Dict]) -> Optional[str]:
+        """Use tier matching to pick a practitioner when user has no preference.
+
+        Falls back to None if no health context is available.
+        """
+        health_context = data.get("health_context")
+        if not health_context:
+            return None
+        eligible = [p["name"] for p in practitioners]
+        best = get_best_practitioner(health_context, eligible)
+        return best  # None if no match
+
+    @staticmethod
     def _format_date(iso: str) -> str:
         """Convert '2026-02-16' to '16th Feb, 2026'."""
         d = datetime.strptime(iso, "%Y-%m-%d").date()
@@ -465,6 +479,8 @@ class BookingService:
         so we can skip to relevant options instead of showing the full list.
         """
         initial: Dict = {"state": "select_service"}
+        if message:
+            initial["health_context"] = message
         if verified_patient:
             initial["name"] = verified_patient.get("name", "")
             initial["phone"] = verified_patient.get("phone", "")
@@ -1079,7 +1095,7 @@ class BookingService:
                 if preferred and preferred.lower() in valid_names:
                     data["practitioner"] = preferred
                 else:
-                    data["practitioner"] = None
+                    data["practitioner"] = self._smart_match_practitioner(data, practitioners)
             # Confusion → replay step with helpful hint (don't auto-advance)
             elif any(phrase in msg_lower for phrase in CONFUSION_PHRASES):
                 actions = [
@@ -1098,7 +1114,7 @@ class BookingService:
                 "you choose", "you pick", "any of them", "either one",
                 "whoever is available", "no particular",
             )):
-                data["practitioner"] = None
+                data["practitioner"] = self._smart_match_practitioner(data, practitioners)
             elif msg_lower in valid_names:
                 # Exact match — use properly-cased name
                 for p in practitioners:

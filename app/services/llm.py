@@ -6,6 +6,7 @@ import re
 import logging
 from app.config import settings
 from app.services.guidelines import get_guidelines
+from app.services.practitioner_matching import get_tier_summary
 
 logger = logging.getLogger(__name__)
 
@@ -48,9 +49,9 @@ RULES:
 - If context is insufficient AND the patient's message is a clear question, respond: "KB_INSUFFICIENT_INFO"
 - If the patient's message is not a clear question (e.g. "no", "ok", "yeah"), respond conversationally without using KB_INSUFFICIENT_INFO
 - Never fabricate information
-- CRITICAL — PRACTITIONERS: NEVER mention any practitioner name that does not appear in the provided context chunks. Our ONLY practitioners are: Dr. Ali Nurani, Dr. Marisa Hucal, Dr. Alexa Torontow, Dr. Madison Thorne, and Lorena Bulcao. Do NOT invent, guess, or assume any other names (e.g. "Dr. Chad", "Emily", etc.). If the patient asks who provides a service and the context does not specify, say "our qualified practitioners" or suggest they book a consultation — NEVER fabricate a name.
-- If the patient asks about a specific person (by name or pronoun like "he/she") who is NOT one of the five practitioners listed above, respond with KB_INSUFFICIENT_INFO.
-"""
+- CRITICAL — PRACTITIONERS: NEVER mention any practitioner name that does not appear in the provided context chunks. Our ONLY practitioners are: Dr. Ali Nurani, Dr. Marisa Hucal, Dr. Alexa Torontow, and Lorena Bulcao. Do NOT invent, guess, or assume any other names (e.g. "Dr. Chad", "Emily", etc.). If the patient asks who provides a service and the context does not specify, say "our qualified practitioners" or suggest they book a consultation — NEVER fabricate a name.
+- If the patient asks about a specific person (by name or pronoun like "he/she") who is NOT one of the four practitioners listed above, respond with KB_INSUFFICIENT_INFO.
+""" + get_tier_summary()
 
 BOOKING_SYSTEM_PROMPT = """You are Nova, a warm and friendly assistant helping a patient book an appointment at Nova Clinic. Generate ONLY the conversational text for the current booking step. Be brief and encouraging.
 
