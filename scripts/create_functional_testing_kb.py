@@ -380,8 +380,9 @@ doc.add_paragraph(
 )
 doc.add_paragraph(
     "Food Sensitivities (IgG-mediated): These are delayed immune reactions triggered by "
-    "IgG antibodies. Unlike food allergies and intolerances, food sensitivities are not "
-    "commonly associated with histamine. Symptoms may appear hours or even days after "
+    "IgG antibodies. IMPORTANT: Food sensitivities are NOT connected to histamine and "
+    "should never be confused with food allergies or intolerances, which can involve "
+    "histamine. Symptoms may appear hours or even days after "
     "eating and include bloating, migraines, fatigue, joint pain, skin issues, and "
     "chronic inflammation. Because of the delay, food sensitivities are often harder to "
     "identify without testing. The IgG Food Sensitivity Test at Nova Clinic helps "
