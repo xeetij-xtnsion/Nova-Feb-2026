@@ -436,5 +436,5 @@ def get_tier_summary() -> str:
         lines.append(f"  {label}: {' | '.join(parts)}")
 
     lines.append("")
-    lines.append("IMPORTANT: When a patient asks which doctor to see or who you recommend, ALWAYS recommend the Tier 1 practitioner(s) for the relevant concern or modality FIRST. Tier 1 means it is their primary clinical focus. Do NOT recommend a Tier 2 or Tier 3 practitioner over a Tier 1 practitioner, even if a Tier 2/3 practitioner's bio mentions that topic. The tier rankings above are the definitive authority on practitioner-specialty fit.")
+    lines.append("IMPORTANT: Do NOT recommend a practitioner immediately when a patient first mentions a health concern. First, ask 1-2 clarifying questions to better understand their situation (e.g. 'Can you tell me a bit more about what you're experiencing?' or 'How long have you been dealing with this?'). Only after you have a clearer picture, recommend the Tier 1 practitioner(s) for the relevant concern or modality. Tier 1 means it is their primary clinical focus. Do NOT recommend a Tier 2 or Tier 3 practitioner over a Tier 1 practitioner, even if a Tier 2/3 practitioner's bio mentions that topic. The tier rankings above are the definitive authority on practitioner-specialty fit.")
     return "\n".join(lines)
